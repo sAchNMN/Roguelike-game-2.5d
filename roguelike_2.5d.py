@@ -278,14 +278,34 @@ class Game:
         if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy = 1.0
         if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx = -1.0
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx = 1.0
-        if dx != 0 and dy != 0: dy = 0
+        if dx != 0 and dy != 0:
+            dx *= 0.7071
+            dy *= 0.7071
         return dx, dy
 
     def start_move(self, dx, dy):
-        nx, ny = self.target_x + dx, self.target_y + dy
-        if self.is_valid_cell(nx, ny):
-            self.target_x, self.target_y = nx, ny
-            self.is_moving = True
+        # 归一化方向到整数步长（对角线走一步）
+        if abs(dx) > 0.1 and abs(dy) > 0.1:
+            step_x = 1.0 if dx > 0 else -1.0
+            step_y = 1.0 if dy > 0 else -1.0
+            # 对角线：尝试斜走，不行则尝试单轴
+            if self.is_valid_cell(self.target_x + step_x, self.target_y + step_y):
+                self.target_x += step_x
+                self.target_y += step_y
+                self.is_moving = True
+            elif self.is_valid_cell(self.target_x + step_x, self.target_y):
+                self.target_x += step_x
+                self.is_moving = True
+            elif self.is_valid_cell(self.target_x, self.target_y + step_y):
+                self.target_y += step_y
+                self.is_moving = True
+        else:
+            step_x = 1.0 if dx > 0.1 else (-1.0 if dx < -0.1 else 0.0)
+            step_y = 1.0 if dy > 0.1 else (-1.0 if dy < -0.1 else 0.0)
+            nx, ny = self.target_x + step_x, self.target_y + step_y
+            if self.is_valid_cell(nx, ny):
+                self.target_x, self.target_y = nx, ny
+                self.is_moving = True
 
     def update(self, dt):
         if self.is_moving:
@@ -299,10 +319,12 @@ class Game:
                 mv = min(self.move_speed * dt, dist)
                 self.player_x += (dx / dist) * mv
                 self.player_y += (dy / dist) * mv
+            # 移动中可以改变方向
             kdx, kdy = self._read_keys()
-            if (kdx != 0 or kdy != 0) and dist > 0:
-                dot = (dx * kdx + dy * kdy) / dist
-                if dot < 0 and dist > 0.5:
+            if (kdx != 0 or kdy != 0) and dist > 0.3:
+                # 检查新方向是否与当前方向相反
+                dot = dx * kdx + dy * kdy
+                if dot < 0:
                     self.start_move(kdx, kdy)
         else:
             dx, dy = self._read_keys()
