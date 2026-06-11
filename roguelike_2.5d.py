@@ -163,6 +163,80 @@ class IsometricRenderer:
         self.camera_x = 0
         self.camera_y = 0
         self.tile_height_offset = 16  # 墙壁高度
+        self.floor_colors = {}  # 预计算的地板颜色
+        self._precompute_floor_colors()
+    
+    def _precompute_floor_colors(self):
+        # 预计算每个地板砖的颜色，避免闪烁
+        for y in range(MAP_HEIGHT):
+            for x in range(MAP_WIDTH):
+                if self.map_data[y][x] != TILE_WALL:
+                    base_color = COLORS['floor']
+                    for room in self.rooms:
+                        if room.x <= x < room.x + room.width and room.y <= y < room.y + room.height:
+                            # 使用确定性的随机种子
+                            random.seed(x * 1000 + y)
+                            color_variation = random.randint(-10, 10)
+                            self.floor_colors[(x, y)] = (
+                                max(0, min(255, base_color[0] + color_variation)),
+                                max(0, min(255, base_color[1] + color_variation)),
+                                max(0, min(255, base_color[2] + color_variation))
+                            )
+                            random.seed()  # 重置随机种子
+                            break
+                    else:
+                        self.floor_colors[(x, y)] = base_color
+    
+    def update_camera(self, player_x, player_y):
+        # 计算玩家在世界坐标中的屏幕位置
+        player_screen_x = (player_x - player_y) * (TILE_WIDTH // 2)
+        player_screen_y = (player_x + player_y) * (TILE_HEIGHT // 2)
+        
+        # 目标摄像机位置：玩家在屏幕中央
+        target_camera_x = player_screen_x - SCREEN_WIDTH // 2
+        target_camera_y = player_screen_y - SCREEN_HEIGHT // 2
+        
+        # 计算地图边界（等距视角下的边界）
+        # 地图四个角的世界坐标转换到屏幕坐标
+        corners = [
+            self.world_to_screen_raw(0, 0),
+            self.world_to_screen_raw(MAP_WIDTH, 0),
+            self.world_to_screen_raw(0, MAP_HEIGHT),
+            self.world_to_screen_raw(MAP_WIDTH, MAP_HEIGHT)
+        ]
+        
+        min_x = min(c[0] for c in corners)
+        max_x = max(c[0] for c in corners)
+        min_y = min(c[1] for c in corners)
+        max_y = max(c[1] for c in corners)
+        
+        map_width_screen = max_x - min_x
+        map_height_screen = max_y - min_y
+        
+        # 边界限制：确保地图边缘距离窗口边缘不超过50像素
+        margin = 50
+        
+        # 如果地图比屏幕小，居中显示
+        if map_width_screen + margin * 2 <= SCREEN_WIDTH:
+            target_camera_x = (map_width_screen - SCREEN_WIDTH) // 2 + min_x
+        else:
+            # 限制摄像机，使地图边缘不超过margin像素
+            target_camera_x = max(min_x - margin, min(target_camera_x, max_x - SCREEN_WIDTH + margin))
+        
+        if map_height_screen + margin * 2 <= SCREEN_HEIGHT:
+            target_camera_y = (map_height_screen - SCREEN_HEIGHT) // 2 + min_y
+        else:
+            target_camera_y = max(min_y - margin, min(target_camera_y, max_y - SCREEN_HEIGHT + margin))
+        
+        # 平滑跟随
+        self.camera_x += (target_camera_x - self.camera_x) * 0.15
+        self.camera_y += (target_camera_y - self.camera_y) * 0.15
+    
+    def world_to_screen_raw(self, world_x, world_y):
+        # 世界坐标转屏幕坐标（不应用摄像机偏移）
+        screen_x = (world_x - world_y) * (TILE_WIDTH // 2)
+        screen_y = (world_x + world_y) * (TILE_HEIGHT // 2)
+        return screen_x, screen_y
     
     def world_to_screen(self, world_x, world_y):
         # 世界坐标转屏幕坐标（等距视角）
@@ -179,6 +253,9 @@ class IsometricRenderer:
         return int(world_x), int(world_y)
     
     def render(self, surface, player_x, player_y):
+        # 更新摄像机位置
+        self.update_camera(player_x, player_y)
+        
         surface.fill(COLORS['black'])
         
         # 渲染地图
@@ -219,18 +296,8 @@ class IsometricRenderer:
             (screen_x - TILE_WIDTH // 2, screen_y)
         ]
         
-        # 根据房间选择颜色
-        color = COLORS['floor']
-        for room in self.rooms:
-            if room.x <= x < room.x + room.width and room.y <= y < room.y + room.height:
-                # 房间内随机颜色变化
-                color_variation = random.randint(-10, 10)
-                color = (
-                    max(0, min(255, color[0] + color_variation)),
-                    max(0, min(255, color[1] + color_variation)),
-                    max(0, min(255, color[2] + color_variation))
-                )
-                break
+        # 使用预计算的颜色
+        color = self.floor_colors.get((x, y), COLORS['floor'])
         
         pygame.draw.polygon(surface, color, points)
         pygame.draw.polygon(surface, COLORS['dark_gray'], points, 1)
