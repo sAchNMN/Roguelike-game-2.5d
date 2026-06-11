@@ -117,6 +117,10 @@ class IsometricRenderer:
         self.cam_x, self.cam_y = 0, 0
         self.tho = 4
         self.floor_colors = {}
+        self.visible_walls = set()
+        self._precompute()
+
+    def _precompute(self):
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
                 if self.map_data[y][x] != TILE_WALL:
@@ -133,6 +137,8 @@ class IsometricRenderer:
                             break
                     else:
                         self.floor_colors[(x, y)] = base
+                elif self._wall_adj(x, y):
+                    self.visible_walls.add((x, y))
 
     def _w2s_raw(self, wx, wy):
         return (wx - wy) * (TILE_WIDTH // 2), (wx + wy) * (TILE_HEIGHT // 2)
@@ -162,21 +168,30 @@ class IsometricRenderer:
         self.cam_x += (tcx - self.cam_x) * 0.15
         self.cam_y += (tcy - self.cam_y) * 0.15
 
+    def _screen_to_tile(self, screen_x, screen_y):
+        wx = (screen_x + self.cam_x) / (TILE_WIDTH // 2)
+        wy = (screen_y + self.cam_y) / (TILE_HEIGHT // 2)
+        return (wx + wy) / 2, (wy - wx) / 2
+
     def render(self, surface, px, py):
         self.update_camera(px, py)
         surface.fill(COLORS['black'])
         margin = 50
-        for y in range(MAP_HEIGHT):
-            for x in range(MAP_WIDTH):
-                sx, sy = self._w2s_raw(x, y)
-                screen_x = sx - self.cam_x
-                screen_y = sy - self.cam_y
-                if (screen_x < -margin or screen_x > SCREEN_WIDTH + margin or
-                    screen_y < -margin or screen_y > SCREEN_HEIGHT + margin):
-                    continue
+        # 计算屏幕四角对应的世界坐标，只遍历可见区域
+        tl_x, tl_y = self._screen_to_tile(-margin, -margin)
+        tr_x, tr_y = self._screen_to_tile(SCREEN_WIDTH + margin, -margin)
+        bl_x, bl_y = self._screen_to_tile(-margin, SCREEN_HEIGHT + margin)
+        br_x, br_y = self._screen_to_tile(SCREEN_WIDTH + margin, SCREEN_HEIGHT + margin)
+        min_tile_x = max(0, int(min(tl_x, tr_x, bl_x, br_x)) - 1)
+        max_tile_x = min(MAP_WIDTH, int(max(tl_x, tr_x, bl_x, br_x)) + 2)
+        min_tile_y = max(0, int(min(tl_y, tr_y, bl_y, br_y)) - 1)
+        max_tile_y = min(MAP_HEIGHT, int(max(tl_y, tr_y, bl_y, br_y)) + 2)
+
+        for y in range(min_tile_y, max_tile_y):
+            for x in range(min_tile_x, max_tile_x):
                 if self.map_data[y][x] != TILE_WALL:
                     self._draw_floor(surface, x, y)
-                elif self._wall_adj(x, y):
+                elif (x, y) in self.visible_walls:
                     self._draw_wall(surface, x, y)
         self._draw_player(surface, px, py)
 
