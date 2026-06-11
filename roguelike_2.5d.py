@@ -123,7 +123,8 @@ class OpenGLRenderer:
         self.target_cam_x, self.target_cam_y = 0.0, 0.0
         self.tho = 0.05
         self._init_opengl()
-        self._build_map_vbo()
+        self._precompute_colors()
+        self._build_chunked_vbos()
 
     def _init_opengl(self):
         glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -138,89 +139,70 @@ class OpenGLRenderer:
     def _w2s(self, wx, wy):
         return (wx - wy) * (TILE_WIDTH / 2) - self.cam_x, (wx + wy) * (TILE_HEIGHT / 2) - self.cam_y
 
-    def _build_map_vbo(self):
-        floor_colors = {}
+    def _precompute_colors(self):
+        base = COLORS['floor']
+        self.floor_colors = {}
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
                 if self.map_data[y][x] != TILE_WALL:
-                    base = COLORS['floor']
                     for r in self.rooms:
                         if r.x <= x < r.x + r.width and r.y <= y < r.y + r.height:
                             random.seed(x * 1000 + y)
                             v = random.randint(-10, 10)
-                            floor_colors[(x, y)] = (
+                            self.floor_colors[(x, y)] = (
                                 max(0, min(255, base[0] + v)) / 255.0,
                                 max(0, min(255, base[1] + v)) / 255.0,
                                 max(0, min(255, base[2] + v)) / 255.0)
                             random.seed()
                             break
                     else:
-                        floor_colors[(x, y)] = (base[0]/255.0, base[1]/255.0, base[2]/255.0)
+                        self.floor_colors[(x, y)] = (base[0]/255.0, base[1]/255.0, base[2]/255.0)
 
-        def adj_wall(x, y):
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < MAP_WIDTH and 0 <= ny < MAP_HEIGHT:
-                    if self.map_data[ny][nx] != TILE_WALL:
-                        return True
-            return False
-
-        # 批量收集顶点数据
-        floor_verts = []
-        floor_colors_arr = []
-        wall_top_verts = []
-        wall_top_colors = []
-        wall_front_verts = []
-        wall_front_colors = []
-        wall_right_verts = []
-        wall_right_colors = []
-
+        self.wall_adj_set = set()
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
-                sx = (x - y) * (TILE_WIDTH / 2)
-                sy = (x + y) * (TILE_HEIGHT / 2)
-                tw = TILE_WIDTH / 2
-                th = TILE_HEIGHT / 2
-                h = self.tho
+                if self.map_data[y][x] == TILE_WALL:
+                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < MAP_WIDTH and 0 <= ny < MAP_HEIGHT:
+                            if self.map_data[ny][nx] != TILE_WALL:
+                                self.wall_adj_set.add((x, y))
+                                break
 
-                if self.map_data[y][x] != TILE_WALL:
-                    r, g, b = floor_colors.get((x, y), (0.627, 0.471, 0.314))
-                    floor_verts.extend([
-                        sx, sy - th, sx + tw, sy, sx, sy + th,
-                        sx, sy + th, sx - tw, sy, sx, sy - th
-                    ])
-                    floor_colors_arr.extend([r, g, b] * 6)
-                elif adj_wall(x, y):
-                    # top
-                    r, g, b = 120/255, 100/255, 80/255
-                    wall_top_verts.extend([
-                        sx, sy - th - h, sx + tw, sy - h, sx, sy + th - h,
-                        sx, sy + th - h, sx - tw, sy - h, sx, sy - th - h
-                    ])
-                    wall_top_colors.extend([r, g, b] * 6)
-                    # front
-                    r, g, b = 100/255, 80/255, 60/255
-                    wall_front_verts.extend([
-                        sx - tw, sy - h, sx, sy + th - h, sx, sy + th,
-                        sx, sy + th, sx - tw, sy, sx - tw, sy - h
-                    ])
-                    wall_front_colors.extend([r, g, b] * 6)
-                    # right
-                    r, g, b = 101/255, 67/255, 33/255
-                    wall_right_verts.extend([
-                        sx + tw, sy - h, sx, sy + th - h, sx, sy + th,
-                        sx, sy + th, sx + tw, sy, sx + tw, sy - h
-                    ])
-                    wall_right_colors.extend([r, g, b] * 6)
-
-        self.floor_vbo = np.array(floor_verts, dtype=np.float32)
-        self.floor_col = np.array(floor_colors_arr, dtype=np.float32)
-        self.wall_top_vbo = np.array(wall_top_verts, dtype=np.float32)
-        self.wall_top_col = np.array(wall_top_colors, dtype=np.float32)
-        self.wall_front_vbo = np.array(wall_front_verts, dtype=np.float32)
-        self.wall_front_col = np.array(wall_front_colors, dtype=np.float32)
-        self.wall_right_vbo = np.array(wall_right_verts, dtype=np.float32)
-        self.wall_right_col = np.array(wall_right_colors, dtype=np.float32)
+    def _build_chunked_vbos(self):
+        CHUNK = 32
+        self.chunks = {}
+        for cy in range(0, MAP_HEIGHT, CHUNK):
+            for cx in range(0, MAP_WIDTH, CHUNK):
+                fv, fc = [], []
+                tw, th, h = TILE_WIDTH / 2, TILE_HEIGHT / 2, self.tho
+                for y in range(cy, min(cy + CHUNK, MAP_HEIGHT)):
+                    for x in range(cx, min(cx + CHUNK, MAP_WIDTH)):
+                        sx = (x - y) * tw
+                        sy = (x + y) * th
+                        if self.map_data[y][x] != TILE_WALL:
+                            r, g, b = self.floor_colors.get((x, y), (0.627, 0.471, 0.314))
+                            fv.extend([sx, sy - th, sx + tw, sy, sx, sy + th,
+                                       sx, sy + th, sx - tw, sy, sx, sy - th])
+                            fc.extend([r, g, b] * 6)
+                        elif (x, y) in self.wall_adj_set:
+                            # front
+                            r, g, b = 100/255, 80/255, 60/255
+                            fv.extend([sx - tw, sy - h, sx, sy + th - h, sx, sy + th,
+                                       sx, sy + th, sx - tw, sy, sx - tw, sy - h])
+                            fc.extend([r, g, b] * 6)
+                            # right
+                            r, g, b = 101/255, 67/255, 33/255
+                            fv.extend([sx + tw, sy - h, sx, sy + th - h, sx, sy + th,
+                                       sx, sy + th, sx + tw, sy, sx + tw, sy - h])
+                            fc.extend([r, g, b] * 6)
+                            # top
+                            r, g, b = 120/255, 100/255, 80/255
+                            fv.extend([sx, sy - th - h, sx + tw, sy - h, sx, sy + th - h,
+                                       sx, sy + th - h, sx - tw, sy - h, sx, sy - th - h])
+                            fc.extend([r, g, b] * 6)
+                if fv:
+                    self.chunks[(cx, cy)] = (np.array(fv, dtype=np.float32), np.array(fc, dtype=np.float32))
 
     def _draw_batch(self, verts, colors):
         glEnableClientState(GL_VERTEX_ARRAY)
@@ -235,10 +217,10 @@ class OpenGLRenderer:
         psx, psy = (px - py) * (TILE_WIDTH / 2), (px + py) * (TILE_HEIGHT / 2)
         self.target_cam_x = psx - SCREEN_WIDTH / 2
         self.target_cam_y = psy - SCREEN_HEIGHT / 2
-
-        corners = []
-        for cx, cy in [(0, 0), (MAP_WIDTH, 0), (0, MAP_HEIGHT), (MAP_WIDTH, MAP_HEIGHT)]:
-            corners.append(((cx - cy) * (TILE_WIDTH / 2), (cx + cy) * (TILE_HEIGHT / 2)))
+        corners = [((0 - 0) * (TILE_WIDTH / 2), (0 + 0) * (TILE_HEIGHT / 2)),
+                   ((MAP_WIDTH - 0) * (TILE_WIDTH / 2), (MAP_WIDTH + 0) * (TILE_HEIGHT / 2)),
+                   ((0 - MAP_HEIGHT) * (TILE_WIDTH / 2), (0 + MAP_HEIGHT) * (TILE_HEIGHT / 2)),
+                   ((MAP_WIDTH - MAP_HEIGHT) * (TILE_WIDTH / 2), (MAP_WIDTH + MAP_HEIGHT) * (TILE_HEIGHT / 2))]
         min_x = min(c[0] for c in corners)
         max_x = max(c[0] for c in corners)
         min_y = min(c[1] for c in corners)
@@ -252,7 +234,6 @@ class OpenGLRenderer:
             self.target_cam_y = (max_y - min_y - SCREEN_HEIGHT) / 2 + min_y
         else:
             self.target_cam_y = max(min_y - m, min(self.target_cam_y, max_y - SCREEN_HEIGHT + m))
-
         self.cam_x += (self.target_cam_x - self.cam_x) * 0.15
         self.cam_y += (self.target_cam_y - self.cam_y) * 0.15
 
@@ -261,13 +242,30 @@ class OpenGLRenderer:
         glClear(GL_COLOR_BUFFER_BIT)
         glLoadIdentity()
 
-        self._draw_batch(self.floor_vbo, self.floor_col)
-        self._draw_batch(self.wall_front_vbo, self.wall_front_col)
-        self._draw_batch(self.wall_right_vbo, self.wall_right_col)
-        self._draw_batch(self.wall_top_vbo, self.wall_top_col)
+        CHUNK = 32
+        # 只画可见chunk
+        tl = self._w2s(0, 0)
+        tr = self._w2s(MAP_WIDTH, 0)
+        bl = self._w2s(0, MAP_HEIGHT)
+        br = self._w2s(MAP_WIDTH, MAP_HEIGHT)
+        screen_min_x = min(tl[0], tr[0], bl[0], br[0]) - 100
+        screen_max_x = max(tl[0], tr[0], bl[0], br[0]) + 100
+        screen_min_y = min(tl[1], tr[1], bl[1], br[1]) - 100
+        screen_max_y = max(tl[1], tr[1], bl[1], br[1]) + 100
+
+        for (cx, cy), (v, c) in self.chunks.items():
+            chunk_sx = (cx - cy) * (TILE_WIDTH / 2) - self.cam_x
+            chunk_sy = (cx + cy) * (TILE_HEIGHT / 2) - self.cam_y
+            chunk_ex = ((cx + CHUNK) - (cy + CHUNK)) * (TILE_WIDTH / 2) - self.cam_x
+            chunk_ey = ((cx + CHUNK) + (cy + CHUNK)) * (TILE_HEIGHT / 2) - self.cam_y
+            if (chunk_sx > SCREEN_WIDTH + 100 or chunk_ex < -100 or
+                chunk_sy > SCREEN_HEIGHT + 100 or chunk_ey < -100):
+                continue
+            self._draw_batch(v, c)
 
         # 玩家
-        sx, sy = (px - py) * (TILE_WIDTH / 2) - self.cam_x, (px + py) * (TILE_HEIGHT / 2) - self.cam_y
+        sx = (px - py) * (TILE_WIDTH / 2) - self.cam_x
+        sy = (px + py) * (TILE_HEIGHT / 2) - self.cam_y
         s = 9
         glBegin(GL_TRIANGLES)
         glColor3f(0, 1, 0.392)
