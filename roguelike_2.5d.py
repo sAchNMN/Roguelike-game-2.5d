@@ -120,6 +120,9 @@ class Renderer:
         self.cam_x, self.cam_y = 0.0, 0.0
         self.target_cam_x, self.target_cam_y = 0.0, 0.0
         self._camera_initialized = False
+        self.zoom = 4.0
+        self.min_zoom = 1.0
+        self.max_zoom = 15.0
         self.map_offset_x = 0
         self.map_offset_y = 0
         self.map_surface = None
@@ -222,20 +225,38 @@ class Renderer:
             self.cam_x += (self.target_cam_x - self.cam_x) * 0.15
             self.cam_y += (self.target_cam_y - self.cam_y) * 0.15
 
+    def zoom_at(self, delta, mx, my):
+        old_zoom = self.zoom
+        self.zoom = max(self.min_zoom, min(self.max_zoom, self.zoom + delta))
+        # 保持鼠标位置不变
+        ratio = self.zoom / old_zoom
+        self.cam_x = self.cam_x + (self.cam_x + mx) * (ratio - 1)
+        self.cam_y = self.cam_y + (self.cam_y + my) * (ratio - 1)
+
     def render(self, px, py):
         self.update_camera(px, py)
         self.surface.fill(COLORS['black'])
-        src_x = int(self.cam_x + self.map_offset_x)
-        src_y = int(self.cam_y + self.map_offset_y)
-        src_x = max(0, min(src_x, max(0, self.map_surf_w - SCREEN_WIDTH)))
-        src_y = max(0, min(src_y, max(0, self.map_surf_h - SCREEN_HEIGHT)))
-        self.surface.blit(self.map_surface, (0, 0), (src_x, src_y, SCREEN_WIDTH, SCREEN_HEIGHT))
-        # 玩家 - 用与地图相同的坐标系
-        psx = int((px - py) * (TILE_WIDTH // 2) + self.map_offset_x - src_x)
-        psy = int((px + py) * (TILE_HEIGHT // 2) + self.map_offset_y - src_y)
-        pts = [(psx, psy - 9), (psx + 9, psy), (psx, psy + 9), (psx - 9, psy)]
+        # 计算可见区域（考虑缩放）
+        view_w = SCREEN_WIDTH / self.zoom
+        view_h = SCREEN_HEIGHT / self.zoom
+        src_x = int(self.cam_x + self.map_offset_x + (640 - view_w) / 2)
+        src_y = int(self.cam_y + self.map_offset_y + (320 - view_h) / 2)
+        src_x = max(0, min(src_x, max(0, self.map_surf_w - int(view_w))))
+        src_y = max(0, min(src_y, max(0, self.map_surf_h - int(view_h))))
+        src_w = min(int(view_w), self.map_surf_w - src_x)
+        src_h = min(int(view_h), self.map_surf_h - src_y)
+        if src_w > 0 and src_h > 0:
+            view = self.map_surface.subsurface((src_x, src_y, src_w, src_h))
+            if self.zoom != 1.0:
+                view = pygame.transform.scale(view, (int(src_w * self.zoom), int(src_h * self.zoom)))
+            self.surface.blit(view, (0, 0))
+        # 玩家
+        psx = int(((px - py) * (TILE_WIDTH // 2) + self.map_offset_x - src_x) * self.zoom)
+        psy = int(((px + py) * (TILE_HEIGHT // 2) + self.map_offset_y - src_y) * self.zoom)
+        s = int(9 * self.zoom)
+        pts = [(psx, psy - s), (psx + s, psy), (psx, psy + s), (psx - s, psy)]
         pygame.draw.polygon(self.surface, COLORS['player'], pts)
-        pygame.draw.polygon(self.surface, COLORS['white'], pts, 2)
+        pygame.draw.polygon(self.surface, COLORS['white'], pts, max(1, int(2 * self.zoom)))
 
     def draw_ui(self, px, py):
         ui = pygame.Surface((200, 150))
@@ -386,6 +407,9 @@ class Game:
                     continue
                 if not self.paused and event.key == pygame.K_r:
                     self.generate_new_map()
+            if event.type == pygame.MOUSEWHEEL:
+                mx, my = pygame.mouse.get_pos()
+                self.renderer.zoom_at(event.y * 0.5, mx, my)
 
     def _draw_pause(self):
         self.renderer.render(self.player_x, self.player_y)
