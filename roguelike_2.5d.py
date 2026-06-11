@@ -1,11 +1,14 @@
 import pygame
+from pygame.locals import *
+from OpenGL.GL import *
+from OpenGL.GLU import *
 import random
 import sys
 import math
 import ctypes
+import numpy as np
 
 pygame.init()
-
 try:
     pygame.key.stop_text_input()
 except Exception:
@@ -112,37 +115,30 @@ class BSPMapGenerator:
                         self.map[y2][x] = TILE_FLOOR
 
 
-class IsometricRenderer:
+class OpenGLRenderer:
     def __init__(self, map_data, rooms):
         self.map_data = map_data
         self.rooms = rooms
-        self.cam_x, self.cam_y = 0, 0
-        self.tho = 4
-        self._build_map_surface()
+        self.cam_x, self.cam_y = 0.0, 0.0
+        self.target_cam_x, self.target_cam_y = 0.0, 0.0
+        self.tho = 0.05
+        self._init_opengl()
+        self._build_map_vbo()
 
-    def _w2s_raw(self, wx, wy):
-        return (wx - wy) * (TILE_WIDTH // 2), (wx + wy) * (TILE_HEIGHT // 2)
+    def _init_opengl(self):
+        glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluOrtho2D(0, SCREEN_WIDTH, SCREEN_HEIGHT, 0)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
     def _w2s(self, wx, wy):
-        sx, sy = self._w2s_raw(wx, wy)
-        return sx - self.cam_x, sy - self.cam_y
+        return (wx - wy) * (TILE_WIDTH / 2) - self.cam_x, (wx + wy) * (TILE_HEIGHT / 2) - self.cam_y
 
-    def _build_map_surface(self):
-        """一次性把整个地图画到一张大Surface上"""
-        corners = [self._w2s_raw(0, 0), self._w2s_raw(MAP_WIDTH, 0),
-                    self._w2s_raw(0, MAP_HEIGHT), self._w2s_raw(MAP_WIDTH, MAP_HEIGHT)]
-        min_x = min(c[0] for c in corners)
-        min_y = min(c[1] for c in corners)
-        max_x = max(c[0] for c in corners)
-        max_y = max(c[1] for c in corners)
-        self.map_offset_x = -min_x + TILE_WIDTH
-        self.map_offset_y = -min_y + self.tho + TILE_HEIGHT
-        self.map_surf_w = max_x - min_x + TILE_WIDTH * 2
-        self.map_surf_h = max_y - min_y + self.tho + TILE_HEIGHT * 2
-        self.map_surface = pygame.Surface((self.map_surf_w, self.map_surf_h))
-        self.map_surface.fill(COLORS['black'])
-
-        # 预计算房间地板颜色
+    def _build_map_vbo(self):
         floor_colors = {}
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
@@ -153,13 +149,13 @@ class IsometricRenderer:
                             random.seed(x * 1000 + y)
                             v = random.randint(-10, 10)
                             floor_colors[(x, y)] = (
-                                max(0, min(255, base[0] + v)),
-                                max(0, min(255, base[1] + v)),
-                                max(0, min(255, base[2] + v)))
+                                max(0, min(255, base[0] + v)) / 255.0,
+                                max(0, min(255, base[1] + v)) / 255.0,
+                                max(0, min(255, base[2] + v)) / 255.0)
                             random.seed()
                             break
                     else:
-                        floor_colors[(x, y)] = base
+                        floor_colors[(x, y)] = (base[0]/255.0, base[1]/255.0, base[2]/255.0)
 
         def adj_wall(x, y):
             for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
@@ -169,94 +165,135 @@ class IsometricRenderer:
                         return True
             return False
 
+        # 批量收集顶点数据
+        floor_verts = []
+        floor_colors_arr = []
+        wall_top_verts = []
+        wall_top_colors = []
+        wall_front_verts = []
+        wall_front_colors = []
+        wall_right_verts = []
+        wall_right_colors = []
+
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
-                sx = (x - y) * (TILE_WIDTH // 2) + self.map_offset_x
-                sy = (x + y) * (TILE_HEIGHT // 2) + self.map_offset_y
+                sx = (x - y) * (TILE_WIDTH / 2)
+                sy = (x + y) * (TILE_HEIGHT / 2)
+                tw = TILE_WIDTH / 2
+                th = TILE_HEIGHT / 2
+                h = self.tho
+
                 if self.map_data[y][x] != TILE_WALL:
-                    color = floor_colors.get((x, y), COLORS['floor'])
-                    pts = [(sx, sy - TILE_HEIGHT // 2), (sx + TILE_WIDTH // 2, sy),
-                           (sx, sy + TILE_HEIGHT // 2), (sx - TILE_WIDTH // 2, sy)]
-                    pygame.draw.polygon(self.map_surface, color, pts)
-                    pygame.draw.polygon(self.map_surface, COLORS['dark_gray'], pts, 1)
+                    r, g, b = floor_colors.get((x, y), (0.627, 0.471, 0.314))
+                    floor_verts.extend([
+                        sx, sy - th, sx + tw, sy, sx, sy + th,
+                        sx, sy + th, sx - tw, sy, sx, sy - th
+                    ])
+                    floor_colors_arr.extend([r, g, b] * 6)
                 elif adj_wall(x, y):
-                    h = self.tho
-                    pygame.draw.polygon(self.map_surface, COLORS['wall_top'],
-                        [(sx, sy - TILE_HEIGHT // 2 - h), (sx + TILE_WIDTH // 2, sy - h),
-                         (sx, sy + TILE_HEIGHT // 2 - h), (sx - TILE_WIDTH // 2, sy - h)])
-                    pygame.draw.polygon(self.map_surface, COLORS['wall'],
-                        [(sx - TILE_WIDTH // 2, sy - h), (sx, sy + TILE_HEIGHT // 2 - h),
-                         (sx, sy + TILE_HEIGHT // 2), (sx - TILE_WIDTH // 2, sy)])
-                    pygame.draw.polygon(self.map_surface, COLORS['dark_brown'],
-                        [(sx + TILE_WIDTH // 2, sy - h), (sx, sy + TILE_HEIGHT // 2 - h),
-                         (sx, sy + TILE_HEIGHT // 2), (sx + TILE_WIDTH // 2, sy)])
+                    # top
+                    r, g, b = 120/255, 100/255, 80/255
+                    wall_top_verts.extend([
+                        sx, sy - th - h, sx + tw, sy - h, sx, sy + th - h,
+                        sx, sy + th - h, sx - tw, sy - h, sx, sy - th - h
+                    ])
+                    wall_top_colors.extend([r, g, b] * 6)
+                    # front
+                    r, g, b = 100/255, 80/255, 60/255
+                    wall_front_verts.extend([
+                        sx - tw, sy - h, sx, sy + th - h, sx, sy + th,
+                        sx, sy + th, sx - tw, sy, sx - tw, sy - h
+                    ])
+                    wall_front_colors.extend([r, g, b] * 6)
+                    # right
+                    r, g, b = 101/255, 67/255, 33/255
+                    wall_right_verts.extend([
+                        sx + tw, sy - h, sx, sy + th - h, sx, sy + th,
+                        sx, sy + th, sx + tw, sy, sx + tw, sy - h
+                    ])
+                    wall_right_colors.extend([r, g, b] * 6)
+
+        self.floor_vbo = np.array(floor_verts, dtype=np.float32)
+        self.floor_col = np.array(floor_colors_arr, dtype=np.float32)
+        self.wall_top_vbo = np.array(wall_top_verts, dtype=np.float32)
+        self.wall_top_col = np.array(wall_top_colors, dtype=np.float32)
+        self.wall_front_vbo = np.array(wall_front_verts, dtype=np.float32)
+        self.wall_front_col = np.array(wall_front_colors, dtype=np.float32)
+        self.wall_right_vbo = np.array(wall_right_verts, dtype=np.float32)
+        self.wall_right_col = np.array(wall_right_colors, dtype=np.float32)
+
+    def _draw_batch(self, verts, colors):
+        glEnableClientState(GL_VERTEX_ARRAY)
+        glEnableClientState(GL_COLOR_ARRAY)
+        glVertexPointer(2, GL_FLOAT, 0, verts)
+        glColorPointer(3, GL_FLOAT, 0, colors)
+        glDrawArrays(GL_TRIANGLES, 0, len(verts) // 2)
+        glDisableClientState(GL_VERTEX_ARRAY)
+        glDisableClientState(GL_COLOR_ARRAY)
 
     def update_camera(self, px, py):
-        psx, psy = self._w2s_raw(px, py)
-        tcx, tcy = psx - SCREEN_WIDTH // 2, psy - SCREEN_HEIGHT // 2
-        corners = [self._w2s_raw(0, 0), self._w2s_raw(MAP_WIDTH, 0),
-                    self._w2s_raw(0, MAP_HEIGHT), self._w2s_raw(MAP_WIDTH, MAP_HEIGHT)]
+        psx, psy = (px - py) * (TILE_WIDTH / 2), (px + py) * (TILE_HEIGHT / 2)
+        self.target_cam_x = psx - SCREEN_WIDTH / 2
+        self.target_cam_y = psy - SCREEN_HEIGHT / 2
+
+        corners = []
+        for cx, cy in [(0, 0), (MAP_WIDTH, 0), (0, MAP_HEIGHT), (MAP_WIDTH, MAP_HEIGHT)]:
+            corners.append(((cx - cy) * (TILE_WIDTH / 2), (cx + cy) * (TILE_HEIGHT / 2)))
         min_x = min(c[0] for c in corners)
         max_x = max(c[0] for c in corners)
         min_y = min(c[1] for c in corners)
         max_y = max(c[1] for c in corners)
         m = 50
         if max_x - min_x + m * 2 <= SCREEN_WIDTH:
-            tcx = (max_x - min_x - SCREEN_WIDTH) // 2 + min_x
+            self.target_cam_x = (max_x - min_x - SCREEN_WIDTH) / 2 + min_x
         else:
-            tcx = max(min_x - m, min(tcx, max_x - SCREEN_WIDTH + m))
+            self.target_cam_x = max(min_x - m, min(self.target_cam_x, max_x - SCREEN_WIDTH + m))
         if max_y - min_y + m * 2 <= SCREEN_HEIGHT:
-            tcy = (max_y - min_y - SCREEN_HEIGHT) // 2 + min_y
+            self.target_cam_y = (max_y - min_y - SCREEN_HEIGHT) / 2 + min_y
         else:
-            tcy = max(min_y - m, min(tcy, max_y - SCREEN_HEIGHT + m))
-        self.cam_x += (tcx - self.cam_x) * 0.15
-        self.cam_y += (tcy - self.cam_y) * 0.15
+            self.target_cam_y = max(min_y - m, min(self.target_cam_y, max_y - SCREEN_HEIGHT + m))
 
-    def render(self, surface, px, py):
+        self.cam_x += (self.target_cam_x - self.cam_x) * 0.15
+        self.cam_y += (self.target_cam_y - self.cam_y) * 0.15
+
+    def render(self, px, py):
         self.update_camera(px, py)
-        surface.fill(COLORS['black'])
-        # 从预渲染的地图Surface上裁剪blit
-        src_x = int(self.cam_x + self.map_offset_x - TILE_WIDTH) - 10
-        src_y = int(self.cam_y + self.map_offset_y - self.tho - TILE_HEIGHT) - 10
-        src_x = max(0, min(src_x, self.map_surf_w - SCREEN_WIDTH))
-        src_y = max(0, min(src_y, self.map_surf_h - SCREEN_HEIGHT))
-        surface.blit(self.map_surface, (0, 0), (src_x, src_y, SCREEN_WIDTH, SCREEN_HEIGHT))
-        # 玩家
-        sx = int((px - py) * (TILE_WIDTH // 2) - self.cam_x)
-        sy = int((px + py) * (TILE_HEIGHT // 2) - self.cam_y)
-        pts = [(sx, sy - 9), (sx + 9, sy), (sx, sy + 9), (sx - 9, sy)]
-        pygame.draw.polygon(surface, COLORS['player'], pts)
-        pygame.draw.polygon(surface, COLORS['white'], pts, 2)
+        glClear(GL_COLOR_BUFFER_BIT)
+        glLoadIdentity()
 
-    def draw_ui(self, surface, px, py):
-        ui = pygame.Surface((200, 150))
-        ui.fill(COLORS['dark_gray'])
-        ui.set_alpha(200)
-        surface.blit(ui, (10, 10))
-        f = pygame.font.Font(None, 24)
-        surface.blit(f.render("2.5D Roguelike", True, COLORS['white']), (20, 20))
-        surface.blit(f.render(f"位置: ({int(px)}, {int(py)})", True, COLORS['light_gray']), (20, 50))
-        for i, t in enumerate(["WASD/方向键: 移动", "R: 重新生成地图", "ESC: 暂停"]):
-            surface.blit(f.render(t, True, COLORS['yellow']), (20, 80 + i * 20))
-        ms = 120
-        mm = pygame.Surface((ms, ms))
-        mm.fill(COLORS['black'])
-        mm.set_alpha(180)
-        sc = ms / max(MAP_WIDTH, MAP_HEIGHT)
-        for y in range(MAP_HEIGHT):
-            for x in range(MAP_WIDTH):
-                if self.map_data[y][x] != TILE_WALL:
-                    c = COLORS['green'] if any(
-                        r.x <= x < r.x + r.width and r.y <= y < r.y + r.height for r in self.rooms
-                    ) else COLORS['floor']
-                    pygame.draw.rect(mm, c, (int(x * sc), int(y * sc), max(1, int(sc)), max(1, int(sc))))
-        pygame.draw.circle(mm, COLORS['player'], (int(px * sc), int(py * sc)), 3)
-        surface.blit(mm, (SCREEN_WIDTH - ms - 10, 10))
+        self._draw_batch(self.floor_vbo, self.floor_col)
+        self._draw_batch(self.wall_front_vbo, self.wall_front_col)
+        self._draw_batch(self.wall_right_vbo, self.wall_right_col)
+        self._draw_batch(self.wall_top_vbo, self.wall_top_col)
+
+        # 玩家
+        sx, sy = (px - py) * (TILE_WIDTH / 2) - self.cam_x, (px + py) * (TILE_HEIGHT / 2) - self.cam_y
+        s = 9
+        glBegin(GL_TRIANGLES)
+        glColor3f(0, 1, 0.392)
+        glVertex2f(sx, sy - s)
+        glVertex2f(sx + s, sy)
+        glVertex2f(sx, sy + s)
+        glVertex2f(sx, sy + s)
+        glVertex2f(sx - s, sy)
+        glVertex2f(sx, sy - s)
+        glEnd()
+        glLineWidth(2)
+        glBegin(GL_LINE_LOOP)
+        glColor3f(1, 1, 1)
+        glVertex2f(sx, sy - s)
+        glVertex2f(sx + s, sy)
+        glVertex2f(sx, sy + s)
+        glVertex2f(sx - s, sy)
+        glEnd()
 
 
 class Game:
     def __init__(self):
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.screen = pygame.display.set_mode(
+            (SCREEN_WIDTH, SCREEN_HEIGHT),
+            DOUBLEBUF | OPENGL | HWSURFACE
+        )
         pygame.display.set_caption("2.5D Roguelike - 随机地图生成")
         self.map_data = None
         self.rooms = None
@@ -270,6 +307,7 @@ class Game:
         self.paused = False
         self.running = True
         self._focus_lost = False
+        self.font = None
         self.generate_new_map()
 
     def generate_new_map(self):
@@ -281,7 +319,7 @@ class Game:
             self.target_x = self.player_x
             self.target_y = self.player_y
         self.is_moving = False
-        self.renderer = IsometricRenderer(self.map_data, self.rooms)
+        self.renderer = OpenGLRenderer(self.map_data, self.rooms)
 
     def is_valid_cell(self, cx, cy):
         ix, iy = int(cx), int(cy)
@@ -351,27 +389,27 @@ class Game:
 
     def handle_events(self):
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+            if event.type == QUIT:
                 self.running = False
                 return
-            if event.type == pygame.WINDOWFOCUSLOST:
+            if event.type == WINDOWFOCUSLOST:
                 self.paused = True
                 self._focus_lost = True
                 self._draw_pause()
-            if event.type == pygame.WINDOWFOCUSGAINED:
+            if event.type == WINDOWFOCUSGAINED:
                 self._focus_lost = False
                 self._reset_keyboard()
                 self.screen = pygame.display.set_mode(
                     (SCREEN_WIDTH, SCREEN_HEIGHT),
-                    pygame.DOUBLEBUF | pygame.HWSURFACE
+                    DOUBLEBUF | OPENGL | HWSURFACE
                 )
-                pygame.display.set_caption("2.5D Roguelike - 随机地图生成")
+                self.renderer._init_opengl()
                 self._draw_pause()
                 continue
             if not is_window_foreground():
                 continue
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+            if event.type == KEYDOWN:
+                if event.key == K_ESCAPE:
                     if self._focus_lost:
                         self._focus_lost = False
                         continue
@@ -379,20 +417,41 @@ class Game:
                     if self.paused:
                         self._draw_pause()
                     continue
-                if not self.paused and event.key == pygame.K_r:
+                if not self.paused and event.key == K_r:
                     self.generate_new_map()
 
     def _draw_pause(self):
-        self.renderer.render(self.screen, self.player_x, self.player_y)
+        self.renderer.render(self.player_x, self.player_y)
+        # 用pygame表面叠加UI
+        ui = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
-        self.screen.blit(overlay, (0, 0))
+        ui.blit(overlay, (0, 0))
         f1 = pygame.font.Font(None, 72)
         f2 = pygame.font.Font(None, 36)
         t1 = f1.render("PAUSED", True, COLORS['white'])
         t2 = f2.render("Press ESC to resume", True, COLORS['light_gray'])
-        self.screen.blit(t1, (SCREEN_WIDTH // 2 - t1.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
-        self.screen.blit(t2, (SCREEN_WIDTH // 2 - t2.get_width() // 2, SCREEN_HEIGHT // 2 + 30))
+        ui.blit(t1, (SCREEN_WIDTH // 2 - t1.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
+        ui.blit(t2, (SCREEN_WIDTH // 2 - t2.get_width() // 2, SCREEN_HEIGHT // 2 + 30))
+        # 转成OpenGL纹理叠加
+        ui_str = pygame.image.tostring(ui, "RGBA", True)  # noqa: deprecated but still needed
+        gl_window_pos = glGetIntegerv(GL_VIEWPORT)
+        glEnable(GL_TEXTURE_2D)
+        tex = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, tex)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, ui_str)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glDisable(GL_DEPTH_TEST)
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0); glVertex2f(0, 0)
+        glTexCoord2f(1, 0); glVertex2f(SCREEN_WIDTH, 0)
+        glTexCoord2f(1, 1); glVertex2f(SCREEN_WIDTH, SCREEN_HEIGHT)
+        glTexCoord2f(0, 1); glVertex2f(0, SCREEN_HEIGHT)
+        glEnd()
+        glDeleteTextures([tex])
+        glDisable(GL_TEXTURE_2D)
+        glEnable(GL_DEPTH_TEST)
         pygame.display.flip()
 
     def run(self):
@@ -404,8 +463,7 @@ class Game:
                 pygame.time.wait(50)
                 continue
             self.update(dt)
-            self.renderer.render(self.screen, self.player_x, self.player_y)
-            self.renderer.draw_ui(self.screen, self.player_x, self.player_y)
+            self.renderer.render(self.player_x, self.player_y)
             pygame.display.flip()
         pygame.quit()
         sys.exit()
