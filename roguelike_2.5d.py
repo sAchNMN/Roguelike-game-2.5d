@@ -360,19 +360,22 @@ class Game:
         pygame.key.start_text_input()
         pygame.event.clear()
 
+    def _reinit_display(self):
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("2.5D Roguelike - 随机地图生成")
+
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
                 return
-            if event.type == pygame.ACTIVEEVENT:
-                if hasattr(event, 'gain'):
-                    if event.gain == 0:
-                        self.paused = True
-                        self._render_pause()
-                    elif event.gain == 1:
-                        self._reset_keyboard()
-                        self._render_pause()
+            if event.type == pygame.WINDOWFOCUSLOST:
+                self.paused = True
+                self._render_pause()
+            if event.type == pygame.WINDOWFOCUSGAINED:
+                self._reset_keyboard()
+                self._reinit_display()
+                self._render_pause()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
