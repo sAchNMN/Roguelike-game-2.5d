@@ -2,18 +2,12 @@ import pygame
 import random
 import sys
 import math
-from collections import deque
 
-# 初始化Pygame
 pygame.init()
 
-# 屏幕设置
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 768
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("2.5D Roguelike - 随机地图生成")
 
-# 颜色定义sss
 COLORS = {
     'black': (0, 0, 0),
     'white': (255, 255, 255),
@@ -36,17 +30,14 @@ COLORS = {
     'item': (255, 215, 0)
 }
 
-# 等距视角参数
 TILE_WIDTH = 64
 TILE_HEIGHT = 32
 MAP_WIDTH = 40
 MAP_HEIGHT = 40
 
-# 地图元素类型
 TILE_FLOOR = 0
 TILE_WALL = 1
-TILE_DOOR = 2
-TILE_STAIRS = 3
+
 
 class Room:
     def __init__(self, x, y, width, height):
@@ -56,12 +47,7 @@ class Room:
         self.height = height
         self.centerX = x + width // 2
         self.centerY = y + height // 2
-    
-    def intersects(self, other):
-        return (self.x <= other.x + other.width and
-                self.x + self.width >= other.x and
-                self.y <= other.y + other.height and
-                self.y + self.height >= other.y)
+
 
 class BSPMapGenerator:
     def __init__(self, width, height, min_room_size=6):
@@ -70,92 +56,68 @@ class BSPMapGenerator:
         self.min_room_size = min_room_size
         self.rooms = []
         self.map = [[TILE_WALL for _ in range(width)] for _ in range(height)]
-    
+
     def generate(self):
-        # 使用BSP算法生成地图
         self._split_space(1, 1, self.width - 2, self.height - 2)
         self._connect_rooms()
-        self._add_details()
         return self.map, self.rooms
-    
+
     def _split_space(self, x, y, width, height):
         if width < self.min_room_size * 2 + 1 or height < self.min_room_size * 2 + 1:
-            # 空间太小，创建房间
-            room_width = random.randint(self.min_room_size, min(width, 12))
-            room_height = random.randint(self.min_room_size, min(height, 10))
-            room_x = random.randint(x, x + width - room_width)
-            room_y = random.randint(y, y + height - room_height)
-            
-            room = Room(room_x, room_y, room_width, room_height)
+            rw = random.randint(self.min_room_size, min(width, 12))
+            rh = random.randint(self.min_room_size, min(height, 10))
+            rx = random.randint(x, x + width - rw)
+            ry = random.randint(y, y + height - rh)
+            room = Room(rx, ry, rw, rh)
             self.rooms.append(room)
             self._create_room(room)
             return
-        
-        # 决定是水平分割还是垂直分割
         if random.random() < 0.5 and width >= self.min_room_size * 2 + 1:
-            # 垂直分割
-            split_x = random.randint(x + self.min_room_size, x + width - self.min_room_size)
-            self._split_space(x, y, split_x - x, height)
-            self._split_space(split_x, y, x + width - split_x, height)
+            sx = random.randint(x + self.min_room_size, x + width - self.min_room_size)
+            self._split_space(x, y, sx - x, height)
+            self._split_space(sx, y, x + width - sx, height)
         elif height >= self.min_room_size * 2 + 1:
-            # 水平分割
-            split_y = random.randint(y + self.min_room_size, y + height - self.min_room_size)
-            self._split_space(x, y, width, split_y - y)
-            self._split_space(x, split_y, width, y + height - split_y)
+            sy = random.randint(y + self.min_room_size, y + height - self.min_room_size)
+            self._split_space(x, y, width, sy - y)
+            self._split_space(x, sy, width, y + height - sy)
         else:
-            # 无法分割，创建房间
-            room_width = random.randint(self.min_room_size, min(width, 12))
-            room_height = random.randint(self.min_room_size, min(height, 10))
-            room_x = random.randint(x, x + width - room_width)
-            room_y = random.randint(y, y + height - room_height)
-            
-            room = Room(room_x, room_y, room_width, room_height)
+            rw = random.randint(self.min_room_size, min(width, 12))
+            rh = random.randint(self.min_room_size, min(height, 10))
+            rx = random.randint(x, x + width - rw)
+            ry = random.randint(y, y + height - rh)
+            room = Room(rx, ry, rw, rh)
             self.rooms.append(room)
             self._create_room(room)
-    
+
     def _create_room(self, room):
         for y in range(room.y, room.y + room.height):
             for x in range(room.x, room.x + room.width):
                 if 0 <= x < self.width and 0 <= y < self.height:
                     self.map[y][x] = TILE_FLOOR
-    
+
     def _connect_rooms(self):
-        # 连接所有房间
         for i in range(len(self.rooms) - 1):
-            room1 = self.rooms[i]
-            room2 = self.rooms[i + 1]
-            self._create_corridor(room1.centerX, room1.centerY, room2.centerX, room2.centerY)
-    
+            r1, r2 = self.rooms[i], self.rooms[i + 1]
+            self._create_corridor(r1.centerX, r1.centerY, r2.centerX, r2.centerY)
+
     def _create_corridor(self, x1, y1, x2, y2):
-        # 创建L形走廊
         if random.random() < 0.5:
-            # 先水平后垂直
             self._create_h_corridor(x1, x2, y1)
             self._create_v_corridor(y1, y2, x2)
         else:
-            # 先垂直后水平
             self._create_v_corridor(y1, y2, x1)
             self._create_h_corridor(x1, x2, y2)
-    
+
     def _create_h_corridor(self, x1, x2, y):
         for x in range(min(x1, x2), max(x1, x2) + 1):
             if 0 <= x < self.width and 0 <= y < self.height:
                 self.map[y][x] = TILE_FLOOR
-    
+
     def _create_v_corridor(self, y1, y2, x):
         for y in range(min(y1, y2), max(y1, y2) + 1):
             if 0 <= x < self.width and 0 <= y < self.height:
                 self.map[y][x] = TILE_FLOOR
-    
-    def _add_details(self):
-        # 添加一些随机细节
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.map[y][x] == TILE_FLOOR:
-                    # 随机添加一些装饰
-                    if random.random() < 0.05:
-                        # 可以在这里添加地板装饰
-                        pass
+
 
 class IsometricRenderer:
     def __init__(self, map_data, rooms):
@@ -163,257 +125,159 @@ class IsometricRenderer:
         self.rooms = rooms
         self.camera_x = 0
         self.camera_y = 0
-        self.tile_height_offset = 16  # 墙壁高度
-        self.floor_colors = {}  # 预计算的地板颜色
+        self.tile_height_offset = 16
+        self.floor_colors = {}
         self._precompute_floor_colors()
-    
+
     def _precompute_floor_colors(self):
-        # 预计算每个地板砖的颜色，避免闪烁
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
                 if self.map_data[y][x] != TILE_WALL:
-                    base_color = COLORS['floor']
+                    base = COLORS['floor']
                     for room in self.rooms:
                         if room.x <= x < room.x + room.width and room.y <= y < room.y + room.height:
-                            # 使用确定性的随机种子
                             random.seed(x * 1000 + y)
-                            color_variation = random.randint(-10, 10)
+                            v = random.randint(-10, 10)
                             self.floor_colors[(x, y)] = (
-                                max(0, min(255, base_color[0] + color_variation)),
-                                max(0, min(255, base_color[1] + color_variation)),
-                                max(0, min(255, base_color[2] + color_variation))
+                                max(0, min(255, base[0] + v)),
+                                max(0, min(255, base[1] + v)),
+                                max(0, min(255, base[2] + v))
                             )
-                            random.seed()  # 重置随机种子
+                            random.seed()
                             break
                     else:
-                        self.floor_colors[(x, y)] = base_color
-    
+                        self.floor_colors[(x, y)] = base
+
     def update_camera(self, player_x, player_y):
-        # 计算玩家在世界坐标中的屏幕位置
-        player_screen_x = (player_x - player_y) * (TILE_WIDTH // 2)
-        player_screen_y = (player_x + player_y) * (TILE_HEIGHT // 2)
-        
-        # 目标摄像机位置：玩家在屏幕中央
-        target_camera_x = player_screen_x - SCREEN_WIDTH // 2
-        target_camera_y = player_screen_y - SCREEN_HEIGHT // 2
-        
-        # 计算地图边界（等距视角下的边界）
-        # 地图四个角的世界坐标转换到屏幕坐标
+        psx = (player_x - player_y) * (TILE_WIDTH // 2)
+        psy = (player_x + player_y) * (TILE_HEIGHT // 2)
+        tcx = psx - SCREEN_WIDTH // 2
+        tcy = psy - SCREEN_HEIGHT // 2
+
         corners = [
-            self.world_to_screen_raw(0, 0),
-            self.world_to_screen_raw(MAP_WIDTH, 0),
-            self.world_to_screen_raw(0, MAP_HEIGHT),
-            self.world_to_screen_raw(MAP_WIDTH, MAP_HEIGHT)
+            self._world_to_screen_raw(0, 0),
+            self._world_to_screen_raw(MAP_WIDTH, 0),
+            self._world_to_screen_raw(0, MAP_HEIGHT),
+            self._world_to_screen_raw(MAP_WIDTH, MAP_HEIGHT)
         ]
-        
         min_x = min(c[0] for c in corners)
         max_x = max(c[0] for c in corners)
         min_y = min(c[1] for c in corners)
         max_y = max(c[1] for c in corners)
-        
-        map_width_screen = max_x - min_x
-        map_height_screen = max_y - min_y
-        
-        # 边界限制：确保地图边缘距离窗口边缘不超过50像素
+
         margin = 50
-        
-        # 如果地图比屏幕小，居中显示
-        if map_width_screen + margin * 2 <= SCREEN_WIDTH:
-            target_camera_x = (map_width_screen - SCREEN_WIDTH) // 2 + min_x
+        if max_x - min_x + margin * 2 <= SCREEN_WIDTH:
+            tcx = (max_x - min_x - SCREEN_WIDTH) // 2 + min_x
         else:
-            # 限制摄像机，使地图边缘不超过margin像素
-            target_camera_x = max(min_x - margin, min(target_camera_x, max_x - SCREEN_WIDTH + margin))
-        
-        if map_height_screen + margin * 2 <= SCREEN_HEIGHT:
-            target_camera_y = (map_height_screen - SCREEN_HEIGHT) // 2 + min_y
+            tcx = max(min_x - margin, min(tcx, max_x - SCREEN_WIDTH + margin))
+        if max_y - min_y + margin * 2 <= SCREEN_HEIGHT:
+            tcy = (max_y - min_y - SCREEN_HEIGHT) // 2 + min_y
         else:
-            target_camera_y = max(min_y - margin, min(target_camera_y, max_y - SCREEN_HEIGHT + margin))
-        
-        # 平滑跟随
-        self.camera_x += (target_camera_x - self.camera_x) * 0.15
-        self.camera_y += (target_camera_y - self.camera_y) * 0.15
-    
-    def world_to_screen_raw(self, world_x, world_y):
-        # 世界坐标转屏幕坐标（不应用摄像机偏移）
-        screen_x = (world_x - world_y) * (TILE_WIDTH // 2)
-        screen_y = (world_x + world_y) * (TILE_HEIGHT // 2)
-        return screen_x, screen_y
-    
-    def world_to_screen(self, world_x, world_y):
-        # 世界坐标转屏幕坐标（等距视角）
-        screen_x = (world_x - world_y) * (TILE_WIDTH // 2)
-        screen_y = (world_x + world_y) * (TILE_HEIGHT // 2)
-        return screen_x - self.camera_x, screen_y - self.camera_y
-    
-    def screen_to_world(self, screen_x, screen_y):
-        # 屏幕坐标转世界坐标
-        screen_x += self.camera_x
-        screen_y += self.camera_y
-        world_x = (screen_x / (TILE_WIDTH // 2) + screen_y / (TILE_HEIGHT // 2)) / 2
-        world_y = (screen_y / (TILE_HEIGHT // 2) - screen_x / (TILE_WIDTH // 2)) / 2
-        return int(world_x), int(world_y)
-    
+            tcy = max(min_y - margin, min(tcy, max_y - SCREEN_HEIGHT + margin))
+
+        self.camera_x += (tcx - self.camera_x) * 0.15
+        self.camera_y += (tcy - self.camera_y) * 0.15
+
+    def _world_to_screen_raw(self, wx, wy):
+        return (wx - wy) * (TILE_WIDTH // 2), (wx + wy) * (TILE_HEIGHT // 2)
+
+    def world_to_screen(self, wx, wy):
+        sx, sy = self._world_to_screen_raw(wx, wy)
+        return sx - self.camera_x, sy - self.camera_y
+
     def render(self, surface, player_x, player_y):
-        # 更新摄像机位置
         self.update_camera(player_x, player_y)
-        
         surface.fill(COLORS['black'])
-        
-        # 渲染地图
+
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
                 if self.map_data[y][x] != TILE_WALL:
-                    self._draw_floor_tile(surface, x, y)
-                
-                if self.map_data[y][x] == TILE_WALL:
-                    # 检查是否需要绘制墙壁（只绘制有地板相邻的墙壁）
-                    if self._should_draw_wall(x, y):
-                        self._draw_wall_tile(surface, x, y)
-        
-        # 渲染玩家
+                    self._draw_floor(surface, x, y)
+                elif self._should_draw_wall(x, y):
+                    self._draw_wall(surface, x, y)
+
         self._draw_player(surface, player_x, player_y)
-        
-        # 渲染UI
         self._draw_ui(surface, player_x, player_y)
-    
+
     def _should_draw_wall(self, x, y):
-        # 检查周围是否有地板
-        directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-        for dx, dy in directions:
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
             nx, ny = x + dx, y + dy
             if 0 <= nx < MAP_WIDTH and 0 <= ny < MAP_HEIGHT:
                 if self.map_data[ny][nx] != TILE_WALL:
                     return True
         return False
-    
-    def _draw_floor_tile(self, surface, x, y):
-        screen_x, screen_y = self.world_to_screen(x, y)
-        
-        # 绘制菱形地板
-        points = [
-            (screen_x, screen_y - TILE_HEIGHT // 2),
-            (screen_x + TILE_WIDTH // 2, screen_y),
-            (screen_x, screen_y + TILE_HEIGHT // 2),
-            (screen_x - TILE_WIDTH // 2, screen_y)
+
+    def _draw_floor(self, surface, x, y):
+        sx, sy = self.world_to_screen(x, y)
+        pts = [
+            (sx, sy - TILE_HEIGHT // 2),
+            (sx + TILE_WIDTH // 2, sy),
+            (sx, sy + TILE_HEIGHT // 2),
+            (sx - TILE_WIDTH // 2, sy)
         ]
-        
-        # 使用预计算的颜色
-        color = self.floor_colors.get((x, y), COLORS['floor'])
-        
-        pygame.draw.polygon(surface, color, points)
-        pygame.draw.polygon(surface, COLORS['dark_gray'], points, 1)
-    
-    def _draw_wall_tile(self, surface, x, y):
-        screen_x, screen_y = self.world_to_screen(x, y)
-        
-        # 绘制墙壁顶部
-        top_points = [
-            (screen_x, screen_y - TILE_HEIGHT // 2 - self.tile_height_offset),
-            (screen_x + TILE_WIDTH // 2, screen_y - self.tile_height_offset),
-            (screen_x, screen_y + TILE_HEIGHT // 2 - self.tile_height_offset),
-            (screen_x - TILE_WIDTH // 2, screen_y - self.tile_height_offset)
-        ]
-        pygame.draw.polygon(surface, COLORS['wall_top'], top_points)
-        pygame.draw.polygon(surface, COLORS['dark_gray'], top_points, 1)
-        
-        # 绘制墙壁前面
-        front_points = [
-            (screen_x - TILE_WIDTH // 2, screen_y - self.tile_height_offset),
-            (screen_x, screen_y + TILE_HEIGHT // 2 - self.tile_height_offset),
-            (screen_x, screen_y + TILE_HEIGHT // 2),
-            (screen_x - TILE_WIDTH // 2, screen_y)
-        ]
-        pygame.draw.polygon(surface, COLORS['wall'], front_points)
-        pygame.draw.polygon(surface, COLORS['dark_gray'], front_points, 1)
-        
-        # 绘制墙壁右面
-        right_points = [
-            (screen_x + TILE_WIDTH // 2, screen_y - self.tile_height_offset),
-            (screen_x, screen_y + TILE_HEIGHT // 2 - self.tile_height_offset),
-            (screen_x, screen_y + TILE_HEIGHT // 2),
-            (screen_x + TILE_WIDTH // 2, screen_y)
-        ]
-        pygame.draw.polygon(surface, COLORS['dark_brown'], right_points)
-        pygame.draw.polygon(surface, COLORS['dark_gray'], right_points, 1)
-    
+        pygame.draw.polygon(surface, self.floor_colors.get((x, y), COLORS['floor']), pts)
+        pygame.draw.polygon(surface, COLORS['dark_gray'], pts, 1)
+
+    def _draw_wall(self, surface, x, y):
+        sx, sy = self.world_to_screen(x, y)
+        ho = self.tile_height_offset
+        top = [(sx, sy - TILE_HEIGHT // 2 - ho), (sx + TILE_WIDTH // 2, sy - ho),
+               (sx, sy + TILE_HEIGHT // 2 - ho), (sx - TILE_WIDTH // 2, sy - ho)]
+        pygame.draw.polygon(surface, COLORS['wall_top'], top)
+        pygame.draw.polygon(surface, COLORS['dark_gray'], top, 1)
+        front = [(sx - TILE_WIDTH // 2, sy - ho), (sx, sy + TILE_HEIGHT // 2 - ho),
+                 (sx, sy + TILE_HEIGHT // 2), (sx - TILE_WIDTH // 2, sy)]
+        pygame.draw.polygon(surface, COLORS['wall'], front)
+        pygame.draw.polygon(surface, COLORS['dark_gray'], front, 1)
+        right = [(sx + TILE_WIDTH // 2, sy - ho), (sx, sy + TILE_HEIGHT // 2 - ho),
+                 (sx, sy + TILE_HEIGHT // 2), (sx + TILE_WIDTH // 2, sy)]
+        pygame.draw.polygon(surface, COLORS['dark_brown'], right)
+        pygame.draw.polygon(surface, COLORS['dark_gray'], right, 1)
+
     def _draw_player(self, surface, x, y):
-        screen_x, screen_y = self.world_to_screen(x, y)
-        screen_x = int(screen_x)
-        screen_y = int(screen_y)
-        
-        # 绘制玩家（简单的菱形）
-        points = [
-            (screen_x, screen_y - TILE_HEIGHT // 2 - 8),
-            (screen_x + 12, screen_y - 4),
-            (screen_x, screen_y + TILE_HEIGHT // 2 - 8),
-            (screen_x - 12, screen_y - 4)
-        ]
-        pygame.draw.polygon(surface, COLORS['player'], points)
-        pygame.draw.polygon(surface, COLORS['white'], points, 2)
-        
-        # 绘制玩家眼睛
-        pygame.draw.circle(surface, COLORS['white'], (screen_x - 4, screen_y - 12), 3)
-        pygame.draw.circle(surface, COLORS['white'], (screen_x + 4, screen_y - 12), 3)
-        pygame.draw.circle(surface, COLORS['black'], (screen_x - 4, screen_y - 12), 1)
-        pygame.draw.circle(surface, COLORS['black'], (screen_x + 4, screen_y - 12), 1)
-    
+        sx, sy = int(self.world_to_screen(x, y)[0]), int(self.world_to_screen(x, y)[1])
+        pts = [(sx, sy - TILE_HEIGHT // 2 - 8), (sx + 12, sy - 4),
+               (sx, sy + TILE_HEIGHT // 2 - 8), (sx - 12, sy - 4)]
+        pygame.draw.polygon(surface, COLORS['player'], pts)
+        pygame.draw.polygon(surface, COLORS['white'], pts, 2)
+        pygame.draw.circle(surface, COLORS['white'], (sx - 4, sy - 12), 3)
+        pygame.draw.circle(surface, COLORS['white'], (sx + 4, sy - 12), 3)
+        pygame.draw.circle(surface, COLORS['black'], (sx - 4, sy - 12), 1)
+        pygame.draw.circle(surface, COLORS['black'], (sx + 4, sy - 12), 1)
+
     def _draw_ui(self, surface, player_x, player_y):
-        # 绘制UI面板
-        ui_panel = pygame.Surface((200, 150))
-        ui_panel.fill(COLORS['dark_gray'])
-        ui_panel.set_alpha(200)
-        surface.blit(ui_panel, (10, 10))
-        
-        # 绘制文字
+        ui = pygame.Surface((200, 150))
+        ui.fill(COLORS['dark_gray'])
+        ui.set_alpha(200)
+        surface.blit(ui, (10, 10))
         font = pygame.font.Font(None, 24)
-        title_text = font.render("2.5D Roguelike", True, COLORS['white'])
-        surface.blit(title_text, (20, 20))
-        
-        pos_text = font.render(f"位置: ({player_x}, {player_y})", True, COLORS['light_gray'])
-        surface.blit(pos_text, (20, 50))
-        
-        controls = [
-            "WASD/方向键: 移动",
-            "R: 重新生成地图",
-            "ESC: 退出"
-        ]
-        
-        for i, control in enumerate(controls):
-            control_text = font.render(control, True, COLORS['yellow'])
-            surface.blit(control_text, (20, 80 + i * 20))
-        
-        # 绘制小地图
+        surface.blit(font.render("2.5D Roguelike", True, COLORS['white']), (20, 20))
+        surface.blit(font.render(f"位置: ({int(player_x)}, {int(player_y)})", True, COLORS['light_gray']), (20, 50))
+        for i, txt in enumerate(["WASD/方向键: 移动", "R: 重新生成地图", "ESC: 暂停"]):
+            surface.blit(font.render(txt, True, COLORS['yellow']), (20, 80 + i * 20))
         self._draw_minimap(surface, player_x, player_y)
-    
+
     def _draw_minimap(self, surface, player_x, player_y):
-        minimap_size = 120
-        minimap_surface = pygame.Surface((minimap_size, minimap_size))
-        minimap_surface.fill(COLORS['black'])
-        minimap_surface.set_alpha(180)
-        
-        scale = minimap_size / max(MAP_WIDTH, MAP_HEIGHT)
-        
-        # 绘制地图
+        ms = 120
+        mm = pygame.Surface((ms, ms))
+        mm.fill(COLORS['black'])
+        mm.set_alpha(180)
+        sc = ms / max(MAP_WIDTH, MAP_HEIGHT)
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
                 if self.map_data[y][x] != TILE_WALL:
-                    color = COLORS['floor']
-                    for room in self.rooms:
-                        if room.x <= x < room.x + room.width and room.y <= y < room.y + room.height:
-                            color = COLORS['green']
-                            break
-                    
-                    pygame.draw.rect(minimap_surface, color, 
-                                   (int(x * scale), int(y * scale), max(1, int(scale)), max(1, int(scale))))
-        
-        # 绘制玩家
-        pygame.draw.circle(minimap_surface, COLORS['player'], 
-                          (int(player_x * scale), int(player_y * scale)), 3)
-        
-        surface.blit(minimap_surface, (SCREEN_WIDTH - minimap_size - 10, 10))
+                    c = COLORS['green'] if any(
+                        r.x <= x < r.x + r.width and r.y <= y < r.y + r.height for r in self.rooms
+                    ) else COLORS['floor']
+                    pygame.draw.rect(mm, c, (int(x * sc), int(y * sc), max(1, int(sc)), max(1, int(sc))))
+        pygame.draw.circle(mm, COLORS['player'], (int(player_x * sc), int(player_y * sc)), 3)
+        surface.blit(mm, (SCREEN_WIDTH - ms - 10, 10))
+
 
 class Game:
     def __init__(self):
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("2.5D Roguelike - 随机地图生成")
         self.map_data = None
         self.rooms = None
         self.player_x = 0.0
@@ -423,127 +287,127 @@ class Game:
         self.move_speed = 6.0
         self.is_moving = False
         self.renderer = None
-        self.keys_pressed = set()
+        self.paused = False
+        self.running = True
         self.generate_new_map()
-    
+
     def generate_new_map(self):
-        generator = BSPMapGenerator(MAP_WIDTH, MAP_HEIGHT)
-        self.map_data, self.rooms = generator.generate()
-        
+        gen = BSPMapGenerator(MAP_WIDTH, MAP_HEIGHT)
+        self.map_data, self.rooms = gen.generate()
         if self.rooms:
             self.player_x = float(self.rooms[0].centerX)
             self.player_y = float(self.rooms[0].centerY)
             self.target_x = self.player_x
             self.target_y = self.player_y
-        
+        self.is_moving = False
         self.renderer = IsometricRenderer(self.map_data, self.rooms)
-    
-    def is_valid_cell(self, cell_x, cell_y):
-        ix = int(cell_x)
-        iy = int(cell_y)
+
+    def is_valid_cell(self, cx, cy):
+        ix, iy = int(cx), int(cy)
         if 0 <= ix < MAP_WIDTH and 0 <= iy < MAP_HEIGHT:
             return self.map_data[iy][ix] != TILE_WALL
         return False
-    
-    def get_move_direction(self):
-        dx = 0.0
-        dy = 0.0
-        
-        if pygame.K_w in self.keys_pressed or pygame.K_UP in self.keys_pressed:
+
+    def _read_keys(self):
+        keys = pygame.key.get_pressed()
+        dx, dy = 0.0, 0.0
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
             dy = -1.0
-        if pygame.K_s in self.keys_pressed or pygame.K_DOWN in self.keys_pressed:
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             dy = 1.0
-        if pygame.K_a in self.keys_pressed or pygame.K_LEFT in self.keys_pressed:
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
             dx = -1.0
-        if pygame.K_d in self.keys_pressed or pygame.K_RIGHT in self.keys_pressed:
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
             dx = 1.0
-        
-        # 只允许四方向移动
         if dx != 0 and dy != 0:
-            if abs(dx) > abs(dy):
-                dy = 0
-            else:
-                dx = 0
-        
+            dy = 0
         return dx, dy
-    
+
     def start_move(self, dx, dy):
-        next_x = self.target_x + dx
-        next_y = self.target_y + dy
-        
-        if self.is_valid_cell(next_x, next_y):
-            self.target_x = next_x
-            self.target_y = next_y
+        nx, ny = self.target_x + dx, self.target_y + dy
+        if self.is_valid_cell(nx, ny):
+            self.target_x = nx
+            self.target_y = ny
             self.is_moving = True
-    
+
     def update(self, dt):
         if self.is_moving:
             dx = self.target_x - self.player_x
             dy = self.target_y - self.player_y
             dist = math.sqrt(dx * dx + dy * dy)
-            
             if dist < 0.05:
                 self.player_x = self.target_x
                 self.player_y = self.target_y
                 self.is_moving = False
             else:
-                move_amount = self.move_speed * dt
-                if move_amount > dist:
-                    move_amount = dist
-                self.player_x += (dx / dist) * move_amount
-                self.player_y += (dy / dist) * move_amount
-            
-            # 移动中检查按键方向
-            key_dx, key_dy = self.get_move_direction()
-            if key_dx != 0 or key_dy != 0:
-                cur_dx = self.target_x - self.player_x
-                cur_dy = self.target_y - self.player_y
-                if dist > 0:
-                    dot = (cur_dx * key_dx + cur_dy * key_dy) / dist
-                    if dot < 0 and dist > 0.5:
-                        self.start_move(key_dx, key_dy)
+                mv = min(self.move_speed * dt, dist)
+                self.player_x += (dx / dist) * mv
+                self.player_y += (dy / dist) * mv
+
+            kdx, kdy = self._read_keys()
+            if (kdx != 0 or kdy != 0) and dist > 0:
+                dot = (dx * kdx + dy * kdy) / dist
+                if dot < 0 and dist > 0.5:
+                    self.start_move(kdx, kdy)
         else:
-            dx, dy = self.get_move_direction()
+            dx, dy = self._read_keys()
             if dx != 0 or dy != 0:
                 self.start_move(dx, dy)
-    
-    def handle_input(self):
+
+    def _reset_keyboard(self):
+        pygame.event.clear()
+        pygame.key.stop_text_input()
+        pygame.key.start_text_input()
+        pygame.event.clear()
+
+    def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    return False
-                elif event.key == pygame.K_r:
-                    self.generate_new_map()
-                else:
-                    self.keys_pressed.add(event.key)
-            elif event.type == pygame.KEYUP:
-                self.keys_pressed.discard(event.key)
-            elif event.type == pygame.ACTIVEEVENT:
+                self.running = False
+                return
+            if event.type == pygame.ACTIVEEVENT:
                 if hasattr(event, 'gain') and event.gain == 1:
-                    self.keys_pressed.clear()
-                    self.is_moving = False
-                    # 重新创建显示表面以恢复键盘输入
-                    global screen
-                    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        
-        return True
-    
+                    self._reset_keyboard()
+                    if self.paused:
+                        self._render_pause()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.paused = not self.paused
+                    if self.paused:
+                        self._render_pause()
+                    continue
+            if not self.paused:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        self.generate_new_map()
+
+    def _render_pause(self):
+        self.renderer.render(self.screen, self.player_x, self.player_y)
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        self.screen.blit(overlay, (0, 0))
+        font_large = pygame.font.Font(None, 72)
+        font_small = pygame.font.Font(None, 36)
+        title = font_large.render("PAUSED", True, COLORS['white'])
+        hint = font_small.render("Press ESC to resume", True, COLORS['light_gray'])
+        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
+        self.screen.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2, SCREEN_HEIGHT // 2 + 30))
+        pygame.display.flip()
+
     def run(self):
         clock = pygame.time.Clock()
-        running = True
-        
-        while running:
+        while self.running:
             dt = clock.tick(60) / 1000.0
-            running = self.handle_input()
+            self.handle_events()
+            if self.paused:
+                pygame.time.wait(50)
+                continue
             self.update(dt)
-            self.renderer.render(screen, self.player_x, self.player_y)
+            self.renderer.render(self.screen, self.player_x, self.player_y)
             pygame.display.flip()
-        
         pygame.quit()
         sys.exit()
 
+
 if __name__ == "__main__":
-    game = Game()
-    game.run()
+    Game().run()
