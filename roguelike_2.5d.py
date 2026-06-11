@@ -194,23 +194,26 @@ class Renderer:
 
     def update_camera(self, px, py):
         psx, psy = self._w2s_raw(px, py)
-        self.target_cam_x = psx - SCREEN_WIDTH // 2
-        self.target_cam_y = psy - SCREEN_HEIGHT // 2
         corners = [self._w2s_raw(0, 0), self._w2s_raw(MAP_WIDTH, 0),
                     self._w2s_raw(0, MAP_HEIGHT), self._w2s_raw(MAP_WIDTH, MAP_HEIGHT)]
         min_x = min(c[0] for c in corners)
         max_x = max(c[0] for c in corners)
         min_y = min(c[1] for c in corners)
         max_y = max(c[1] for c in corners)
-        m = 50
-        if max_x - min_x + m * 2 <= SCREEN_WIDTH:
-            self.target_cam_x = (max_x - min_x - SCREEN_WIDTH) // 2 + min_x
+        map_w = max_x - min_x
+        map_h = max_y - min_y
+
+        # 地图比屏幕小，居中地图
+        if map_w + 100 <= SCREEN_WIDTH and map_h + 100 <= SCREEN_HEIGHT:
+            self.target_cam_x = (map_w - SCREEN_WIDTH) / 2 + min_x
+            self.target_cam_y = (map_h - SCREEN_HEIGHT) / 2 + min_y
         else:
+            self.target_cam_x = psx - SCREEN_WIDTH / 2
+            self.target_cam_y = psy - SCREEN_HEIGHT / 2
+            m = 50
             self.target_cam_x = max(min_x - m, min(self.target_cam_x, max_x - SCREEN_WIDTH + m))
-        if max_y - min_y + m * 2 <= SCREEN_HEIGHT:
-            self.target_cam_y = (max_y - min_y - SCREEN_HEIGHT) // 2 + min_y
-        else:
             self.target_cam_y = max(min_y - m, min(self.target_cam_y, max_y - SCREEN_HEIGHT + m))
+
         if not self._camera_initialized:
             self.cam_x = self.target_cam_x
             self.cam_y = self.target_cam_y
