@@ -222,10 +222,13 @@ class Renderer:
     def render(self, px, py):
         self.update_camera(px, py)
         self.surface.fill(COLORS['black'])
-        src_x = int(self.cam_x + self.map_offset_x - TILE_WIDTH) - 10
-        src_y = int(self.cam_y + self.map_offset_y - 4 - TILE_HEIGHT) - 10
-        src_x = max(0, min(src_x, self.map_surf_w - SCREEN_WIDTH))
-        src_y = max(0, min(src_y, self.map_surf_h - SCREEN_HEIGHT))
+        # cam_x/cam_y是屏幕左上角在世界坐标系中的位置
+        # map_surface的(0,0)对应世界坐标(-min_x + TILE_WIDTH, -min_y + 4 + TILE_HEIGHT)
+        # 所以源区域起点 = cam_x + map_offset_x
+        src_x = int(self.cam_x + self.map_offset_x)
+        src_y = int(self.cam_y + self.map_offset_y)
+        src_x = max(0, min(src_x, max(0, self.map_surf_w - SCREEN_WIDTH)))
+        src_y = max(0, min(src_y, max(0, self.map_surf_h - SCREEN_HEIGHT)))
         self.surface.blit(self.map_surface, (0, 0), (src_x, src_y, SCREEN_WIDTH, SCREEN_HEIGHT))
         # 玩家
         sx = int((px - py) * (TILE_WIDTH // 2) - self.cam_x)
