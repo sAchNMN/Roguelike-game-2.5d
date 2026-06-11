@@ -289,6 +289,7 @@ class Game:
         self.renderer = None
         self.paused = False
         self.running = True
+        self._last_focus_time = 0
         self.generate_new_map()
 
     def generate_new_map(self):
@@ -360,9 +361,14 @@ class Game:
         pygame.key.start_text_input()
         pygame.event.clear()
 
-    def _reinit_display(self):
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    def _reinit_window(self):
+        self.screen = pygame.display.set_mode(
+            (SCREEN_WIDTH, SCREEN_HEIGHT),
+            pygame.DOUBLEBUF | pygame.HWSURFACE
+        )
         pygame.display.set_caption("2.5D Roguelike - 随机地图生成")
+        self._reset_keyboard()
+        self._last_focus_time = pygame.time.get_ticks()
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -373,14 +379,16 @@ class Game:
                 self.paused = True
                 self._render_pause()
             if event.type == pygame.WINDOWFOCUSGAINED:
-                self._reset_keyboard()
-                self._reinit_display()
+                self._reinit_window()
                 self._render_pause()
+                continue
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    self.paused = not self.paused
-                    if self.paused:
-                        self._render_pause()
+                    now = pygame.time.get_ticks()
+                    if now - self._last_focus_time > 300:
+                        self.paused = not self.paused
+                        if self.paused:
+                            self._render_pause()
                     continue
             if not self.paused:
                 if event.type == pygame.KEYDOWN:
