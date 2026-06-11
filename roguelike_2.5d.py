@@ -1,6 +1,7 @@
 import pygame
 import random
 import sys
+import math
 from collections import deque
 
 # 初始化Pygame
@@ -417,7 +418,10 @@ class Game:
         self.rooms = None
         self.player_x = 0.0
         self.player_y = 0.0
-        self.move_speed = 3.0  # 移动速度（每秒格数）
+        self.target_x = 0.0  # 目标网格位置
+        self.target_y = 0.0
+        self.move_speed = 6.0  # 移动速度（每秒格数）
+        self.is_moving = False
         self.renderer = None
         self.keys_pressed = set()
         self.generate_new_map()
@@ -431,54 +435,90 @@ class Game:
         if self.rooms:
             self.player_x = float(self.rooms[0].centerX)
             self.player_y = float(self.rooms[0].centerY)
+            self.target_x = self.player_x
+            self.target_y = self.player_y
         
         self.renderer = IsometricRenderer(self.map_data, self.rooms)
     
-    def is_valid_position(self, x, y):
-        # 检查位置是否有效（基于浮点坐标）
-        map_x = int(x)
-        map_y = int(y)
-        if 0 <= map_x < MAP_WIDTH and 0 <= map_y < MAP_HEIGHT:
-            return self.map_data[map_y][map_x] != TILE_WALL
+    def is_valid_cell(self, cell_x, cell_y):
+        # 检查网格单元是否可通行
+        ix = int(cell_x)
+        iy = int(cell_y)
+        if 0 <= ix < MAP_WIDTH and 0 <= iy < MAP_HEIGHT:
+            return self.map_data[iy][ix] != TILE_WALL
         return False
     
-    def update(self, dt):
-        # 根据按键状态移动
+    def get_move_direction(self):
+        # 获取当前按键的移动方向
         dx = 0.0
         dy = 0.0
         
         if pygame.K_w in self.keys_pressed or pygame.K_UP in self.keys_pressed:
-            dy -= 1.0
+            dy = -1.0
         if pygame.K_s in self.keys_pressed or pygame.K_DOWN in self.keys_pressed:
-            dy += 1.0
+            dy = 1.0
         if pygame.K_a in self.keys_pressed or pygame.K_LEFT in self.keys_pressed:
-            dx -= 1.0
+            dx = -1.0
         if pygame.K_d in self.keys_pressed or pygame.K_RIGHT in self.keys_pressed:
-            dx += 1.0
+            dx = 1.0
         
-        # 归一化对角线移动
+        # 只允许四方向移动（不支持对角线）
         if dx != 0 and dy != 0:
-            dx *= 0.707
-            dy *= 0.707
+            # 优先水平移动，或者根据最后一次按键决定
+            if abs(dx) > abs(dy):
+                dy = 0
+            else:
+                dx = 0
         
-        if dx != 0 or dy != 0:
-            # 计算新位置
-            new_x = self.player_x + dx * self.move_speed * dt
-            new_y = self.player_y + dy * self.move_speed * dt
+        return dx, dy
+    
+    def start_move(self, dx, dy):
+        # 开始向目标方向移动一个网格
+        next_x = self.target_x + dx
+        next_y = self.target_y + dy
+        
+        if self.is_valid_cell(next_x, next_y):
+            self.target_x = next_x
+            self.target_y = next_y
+            self.is_moving = True
+    
+    def update(self, dt):
+        if self.is_moving:
+            # 正在移动中，向目标位置插值
+            dx = self.target_x - self.player_x
+            dy = self.target_y - self.player_y
+            dist = math.sqrt(dx * dx + dy * dy)
             
-            # 分轴碰撞检测，允许滑动
-            if self.is_valid_position(new_x, self.player_y):
-                self.player_x = new_x
-            if self.is_valid_position(self.player_x, new_y):
-                self.player_y = new_y
+            if dist < 0.05:
+                # 到达目标位置
+                self.player_x = self.target_x
+                self.player_y = self.target_y
+                self.is_moving = False
+            else:
+                # 向目标移动
+                move_amount = self.move_speed * dt
+                if move_amount > dist:
+                    move_amount = dist
+                self.player_x += (dx / dist) * move_amount
+                self.player_y += (dy / dist) * move_amount
+            
+            # 移动中如果按键方向改变，可以开始新方向
+            key_dx, key_dy = self.get_move_direction()
+            if key_dx != 0 or key_dy != 0:
+                # 计算当前方向与按键方向是否一致
+                cur_dx = self.target_x - self.player_x
+                cur_dy = self.target_y - self.player_y
+                if dist > 0:
+                    # 如果方向不同且已经移动了一半以上，可以转向
+                    dot = (cur_dx * key_dx + cur_dy * key_dy) / dist
+                    if dot < 0 and dist > 0.5:
+                        # 方向相反或垂直，开始新移动
+                        self.start_move(key_dx, key_dy)
         else:
-            # 没有按键按下时，平滑对齐到最近的网格中心
-            target_x = round(self.player_x)
-            target_y = round(self.player_y)
-            
-            align_speed = 10.0  # 对齐速度
-            self.player_x += (target_x - self.player_x) * align_speed * dt
-            self.player_y += (target_y - self.player_y) * align_speed * dt
+            # 没有在移动，检查是否有按键输入
+            dx, dy = self.get_move_direction()
+            if dx != 0 or dy != 0:
+                self.start_move(dx, dy)
     
     def handle_input(self):
         for event in pygame.event.get():
