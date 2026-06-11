@@ -461,15 +461,24 @@ class Game:
             dx *= 0.707
             dy *= 0.707
         
-        # 计算新位置
-        new_x = self.player_x + dx * self.move_speed * dt
-        new_y = self.player_y + dy * self.move_speed * dt
-        
-        # 分轴碰撞检测，允许滑动
-        if self.is_valid_position(new_x, self.player_y):
-            self.player_x = new_x
-        if self.is_valid_position(self.player_x, new_y):
-            self.player_y = new_y
+        if dx != 0 or dy != 0:
+            # 计算新位置
+            new_x = self.player_x + dx * self.move_speed * dt
+            new_y = self.player_y + dy * self.move_speed * dt
+            
+            # 分轴碰撞检测，允许滑动
+            if self.is_valid_position(new_x, self.player_y):
+                self.player_x = new_x
+            if self.is_valid_position(self.player_x, new_y):
+                self.player_y = new_y
+        else:
+            # 没有按键按下时，平滑对齐到最近的网格中心
+            target_x = round(self.player_x)
+            target_y = round(self.player_y)
+            
+            align_speed = 10.0  # 对齐速度
+            self.player_x += (target_x - self.player_x) * align_speed * dt
+            self.player_y += (target_y - self.player_y) * align_speed * dt
     
     def handle_input(self):
         for event in pygame.event.get():
