@@ -337,6 +337,8 @@ class IsometricRenderer:
     
     def _draw_player(self, surface, x, y):
         screen_x, screen_y = self.world_to_screen(x, y)
+        screen_x = int(screen_x)
+        screen_y = int(screen_y)
         
         # 绘制玩家（简单的菱形）
         points = [
@@ -415,6 +417,10 @@ class Game:
         self.rooms = None
         self.player_x = 0
         self.player_y = 0
+        self.player_render_x = 0.0  # 渲染用的浮点位置
+        self.player_render_y = 0.0
+        self.move_speed = 0.12  # 移动插值速度
+        self.is_moving = False
         self.renderer = None
         self.generate_new_map()
     
@@ -427,6 +433,8 @@ class Game:
         if self.rooms:
             self.player_x = self.rooms[0].centerX
             self.player_y = self.rooms[0].centerY
+            self.player_render_x = float(self.player_x)
+            self.player_render_y = float(self.player_y)
         
         self.renderer = IsometricRenderer(self.map_data, self.rooms)
     
@@ -443,6 +451,22 @@ class Game:
         if self.is_valid_move(new_x, new_y):
             self.player_x = new_x
             self.player_y = new_y
+    
+    def update(self):
+        # 平滑插值到目标位置
+        dx = self.player_x - self.player_render_x
+        dy = self.player_y - self.player_render_y
+        
+        dist = (dx * dx + dy * dy) ** 0.5
+        
+        if dist > 0.01:
+            self.player_render_x += dx * self.move_speed
+            self.player_render_y += dy * self.move_speed
+            self.is_moving = True
+        else:
+            self.player_render_x = float(self.player_x)
+            self.player_render_y = float(self.player_y)
+            self.is_moving = False
     
     def handle_input(self):
         for event in pygame.event.get():
@@ -470,7 +494,8 @@ class Game:
         
         while running:
             running = self.handle_input()
-            self.renderer.render(screen, self.player_x, self.player_y)
+            self.update()
+            self.renderer.render(screen, self.player_render_x, self.player_render_y)
             pygame.display.flip()
             clock.tick(60)
         
