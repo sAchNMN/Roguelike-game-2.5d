@@ -203,19 +203,15 @@ class Renderer:
         max_x = max(c[0] for c in corners)
         min_y = min(c[1] for c in corners)
         max_y = max(c[1] for c in corners)
-        map_w = max_x - min_x
-        map_h = max_y - min_y
 
-        # 地图比屏幕小，居中地图
-        if map_w + 100 <= SCREEN_WIDTH and map_h + 100 <= SCREEN_HEIGHT:
-            self.target_cam_x = (map_w - SCREEN_WIDTH) / 2 + min_x
-            self.target_cam_y = (map_h - SCREEN_HEIGHT) / 2 + min_y
-        else:
-            self.target_cam_x = psx - SCREEN_WIDTH / 2
-            self.target_cam_y = psy - SCREEN_HEIGHT / 2
-            m = 50
-            self.target_cam_x = max(min_x - m, min(self.target_cam_x, max_x - SCREEN_WIDTH + m))
-            self.target_cam_y = max(min_y - m, min(self.target_cam_y, max_y - SCREEN_HEIGHT + m))
+        # 目标：玩家在屏幕中央
+        self.target_cam_x = psx - SCREEN_WIDTH / (2 * self.zoom)
+        self.target_cam_y = psy - SCREEN_HEIGHT / (2 * self.zoom)
+
+        # 边缘限制：地图边缘离屏幕不超过50像素
+        m = 50 / self.zoom
+        self.target_cam_x = max(min_x - m, min(self.target_cam_x, max_x - SCREEN_WIDTH / self.zoom + m))
+        self.target_cam_y = max(min_y - m, min(self.target_cam_y, max_y - SCREEN_HEIGHT / self.zoom + m))
 
         if not self._camera_initialized:
             self.cam_x = self.target_cam_x
