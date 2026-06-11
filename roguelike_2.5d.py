@@ -533,6 +533,10 @@ class Game:
                     self.keys_pressed.add(event.key)
             elif event.type == pygame.KEYUP:
                 self.keys_pressed.discard(event.key)
+            elif event.type == pygame.WINDOWFOCUSGAINED:
+                # 窗口重新获得焦点时清空按键状态，防止残留
+                self.keys_pressed.clear()
+                self.is_moving = False
         
         return True
     
