@@ -28,10 +28,10 @@ COLORS = {
     'item': (255, 215, 0)
 }
 
-TILE_WIDTH = 64
-TILE_HEIGHT = 32
-MAP_WIDTH = 40
-MAP_HEIGHT = 40
+TILE_WIDTH = 16
+TILE_HEIGHT = 8
+MAP_WIDTH = 400
+MAP_HEIGHT = 400
 TILE_FLOOR = 0
 TILE_WALL = 1
 
@@ -51,7 +51,7 @@ class Room:
 
 
 class BSPMapGenerator:
-    def __init__(self, w, h, min_size=6):
+    def __init__(self, w, h, min_size=60):
         self.w, self.h, self.min_size = w, h, min_size
         self.rooms = []
         self.map = [[TILE_WALL] * w for _ in range(h)]
@@ -63,8 +63,8 @@ class BSPMapGenerator:
 
     def _split(self, x, y, w, h):
         if w < self.min_size * 2 + 1 or h < self.min_size * 2 + 1:
-            rw = random.randint(self.min_size, min(w, 12))
-            rh = random.randint(self.min_size, min(h, 10))
+            rw = random.randint(self.min_size, min(w, 120))
+            rh = random.randint(self.min_size, min(h, 100))
             r = Room(random.randint(x, x + w - rw), random.randint(y, y + h - rh), rw, rh)
             self.rooms.append(r)
             for ry in range(r.y, r.y + r.height):
@@ -81,8 +81,8 @@ class BSPMapGenerator:
             self._split(x, y, w, sy - y)
             self._split(x, sy, w, y + h - sy)
         else:
-            rw = random.randint(self.min_size, min(w, 12))
-            rh = random.randint(self.min_size, min(h, 10))
+            rw = random.randint(self.min_size, min(w, 120))
+            rh = random.randint(self.min_size, min(h, 100))
             r = Room(random.randint(x, x + w - rw), random.randint(y, y + h - rh), rw, rh)
             self.rooms.append(r)
             for ry in range(r.y, r.y + r.height):
@@ -115,7 +115,7 @@ class IsometricRenderer:
         self.map_data = map_data
         self.rooms = rooms
         self.cam_x, self.cam_y = 0, 0
-        self.tho = 16
+        self.tho = 4
         self.floor_colors = {}
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
@@ -203,14 +203,10 @@ class IsometricRenderer:
 
     def _draw_player(self, surface, x, y):
         sx, sy = int(self._w2s(x, y)[0]), int(self._w2s(x, y)[1])
-        pts = [(sx, sy - TILE_HEIGHT // 2 - 8), (sx + 12, sy - 4),
-               (sx, sy + TILE_HEIGHT // 2 - 8), (sx - 12, sy - 4)]
+        pts = [(sx, sy - 3), (sx + 3, sy),
+               (sx, sy + 3), (sx - 3, sy)]
         pygame.draw.polygon(surface, COLORS['player'], pts)
-        pygame.draw.polygon(surface, COLORS['white'], pts, 2)
-        pygame.draw.circle(surface, COLORS['white'], (sx - 4, sy - 12), 3)
-        pygame.draw.circle(surface, COLORS['white'], (sx + 4, sy - 12), 3)
-        pygame.draw.circle(surface, COLORS['black'], (sx - 4, sy - 12), 1)
-        pygame.draw.circle(surface, COLORS['black'], (sx + 4, sy - 12), 1)
+        pygame.draw.polygon(surface, COLORS['white'], pts, 1)
 
     def draw_ui(self, surface, px, py):
         ui = pygame.Surface((200, 150))
