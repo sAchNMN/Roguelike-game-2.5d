@@ -418,20 +418,17 @@ class Game:
         self.rooms = None
         self.player_x = 0.0
         self.player_y = 0.0
-        self.target_x = 0.0  # 目标网格位置
+        self.target_x = 0.0
         self.target_y = 0.0
-        self.move_speed = 6.0  # 移动速度（每秒格数）
+        self.move_speed = 6.0
         self.is_moving = False
         self.renderer = None
-        self.keys_pressed = set()
         self.generate_new_map()
     
     def generate_new_map(self):
-        # 生成新地图
         generator = BSPMapGenerator(MAP_WIDTH, MAP_HEIGHT)
         self.map_data, self.rooms = generator.generate()
         
-        # 将玩家放在第一个房间
         if self.rooms:
             self.player_x = float(self.rooms[0].centerX)
             self.player_y = float(self.rooms[0].centerY)
@@ -441,7 +438,6 @@ class Game:
         self.renderer = IsometricRenderer(self.map_data, self.rooms)
     
     def is_valid_cell(self, cell_x, cell_y):
-        # 检查网格单元是否可通行
         ix = int(cell_x)
         iy = int(cell_y)
         if 0 <= ix < MAP_WIDTH and 0 <= iy < MAP_HEIGHT:
@@ -449,22 +445,22 @@ class Game:
         return False
     
     def get_move_direction(self):
-        # 获取当前按键的移动方向
+        # 直接查询键盘状态，不依赖事件队列
+        keys = pygame.key.get_pressed()
         dx = 0.0
         dy = 0.0
         
-        if pygame.K_w in self.keys_pressed or pygame.K_UP in self.keys_pressed:
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
             dy = -1.0
-        if pygame.K_s in self.keys_pressed or pygame.K_DOWN in self.keys_pressed:
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             dy = 1.0
-        if pygame.K_a in self.keys_pressed or pygame.K_LEFT in self.keys_pressed:
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
             dx = -1.0
-        if pygame.K_d in self.keys_pressed or pygame.K_RIGHT in self.keys_pressed:
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
             dx = 1.0
         
-        # 只允许四方向移动（不支持对角线）
+        # 只允许四方向移动
         if dx != 0 and dy != 0:
-            # 优先水平移动，或者根据最后一次按键决定
             if abs(dx) > abs(dy):
                 dy = 0
             else:
@@ -473,7 +469,6 @@ class Game:
         return dx, dy
     
     def start_move(self, dx, dy):
-        # 开始向目标方向移动一个网格
         next_x = self.target_x + dx
         next_y = self.target_y + dy
         
@@ -484,38 +479,31 @@ class Game:
     
     def update(self, dt):
         if self.is_moving:
-            # 正在移动中，向目标位置插值
             dx = self.target_x - self.player_x
             dy = self.target_y - self.player_y
             dist = math.sqrt(dx * dx + dy * dy)
             
             if dist < 0.05:
-                # 到达目标位置
                 self.player_x = self.target_x
                 self.player_y = self.target_y
                 self.is_moving = False
             else:
-                # 向目标移动
                 move_amount = self.move_speed * dt
                 if move_amount > dist:
                     move_amount = dist
                 self.player_x += (dx / dist) * move_amount
                 self.player_y += (dy / dist) * move_amount
             
-            # 移动中如果按键方向改变，可以开始新方向
+            # 移动中检查按键方向
             key_dx, key_dy = self.get_move_direction()
             if key_dx != 0 or key_dy != 0:
-                # 计算当前方向与按键方向是否一致
                 cur_dx = self.target_x - self.player_x
                 cur_dy = self.target_y - self.player_y
                 if dist > 0:
-                    # 如果方向不同且已经移动了一半以上，可以转向
                     dot = (cur_dx * key_dx + cur_dy * key_dy) / dist
                     if dot < 0 and dist > 0.5:
-                        # 方向相反或垂直，开始新移动
                         self.start_move(key_dx, key_dy)
         else:
-            # 没有在移动，检查是否有按键输入
             dx, dy = self.get_move_direction()
             if dx != 0 or dy != 0:
                 self.start_move(dx, dy)
@@ -529,14 +517,6 @@ class Game:
                     return False
                 elif event.key == pygame.K_r:
                     self.generate_new_map()
-                else:
-                    self.keys_pressed.add(event.key)
-            elif event.type == pygame.KEYUP:
-                self.keys_pressed.discard(event.key)
-            elif event.type == pygame.WINDOWFOCUSGAINED:
-                # 窗口重新获得焦点时清空按键状态，防止残留
-                self.keys_pressed.clear()
-                self.is_moving = False
         
         return True
     
