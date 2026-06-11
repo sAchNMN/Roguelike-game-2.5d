@@ -525,8 +525,9 @@ class Game:
         running = True
         
         while running:
-            dt = clock.tick(60) / 1000.0  # 秒为单位的时间差
+            dt = clock.tick(60) / 1000.0
             running = self.handle_input()
+            pygame.event.pump()  # 更新内部状态，包括键盘状态
             self.update(dt)
             self.renderer.render(screen, self.player_x, self.player_y)
             pygame.display.flip()
