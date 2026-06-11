@@ -7,13 +7,16 @@ from collections import deque
 # 初始化Pygame
 pygame.init()
 
+# 启用键盘文本输入模式（解决Windows下窗口切换后键盘无响应问题）
+pygame.key.start_text_input()
+
 # 屏幕设置
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 768
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("2.5D Roguelike - 随机地图生成")
 
-# 颜色定义
+# 颜色定义sss
 COLORS = {
     'black': (0, 0, 0),
     'white': (255, 255, 255),
@@ -423,6 +426,7 @@ class Game:
         self.move_speed = 6.0
         self.is_moving = False
         self.renderer = None
+        self.keys_pressed = set()
         self.generate_new_map()
     
     def generate_new_map(self):
@@ -445,18 +449,16 @@ class Game:
         return False
     
     def get_move_direction(self):
-        # 直接查询键盘状态，不依赖事件队列
-        keys = pygame.key.get_pressed()
         dx = 0.0
         dy = 0.0
         
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
+        if pygame.K_w in self.keys_pressed or pygame.K_UP in self.keys_pressed:
             dy = -1.0
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+        if pygame.K_s in self.keys_pressed or pygame.K_DOWN in self.keys_pressed:
             dy = 1.0
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+        if pygame.K_a in self.keys_pressed or pygame.K_LEFT in self.keys_pressed:
             dx = -1.0
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        if pygame.K_d in self.keys_pressed or pygame.K_RIGHT in self.keys_pressed:
             dx = 1.0
         
         # 只允许四方向移动
@@ -517,6 +519,15 @@ class Game:
                     return False
                 elif event.key == pygame.K_r:
                     self.generate_new_map()
+                else:
+                    self.keys_pressed.add(event.key)
+            elif event.type == pygame.KEYUP:
+                self.keys_pressed.discard(event.key)
+            elif event.type == pygame.ACTIVEEVENT:
+                # 窗口获得/失去焦点时清空按键状态
+                if hasattr(event, 'gain') and event.gain == 1:
+                    self.keys_pressed.clear()
+                    self.is_moving = False
         
         return True
     
@@ -527,7 +538,6 @@ class Game:
         while running:
             dt = clock.tick(60) / 1000.0
             running = self.handle_input()
-            pygame.event.pump()  # 更新内部状态，包括键盘状态
             self.update(dt)
             self.renderer.render(screen, self.player_x, self.player_y)
             pygame.display.flip()
