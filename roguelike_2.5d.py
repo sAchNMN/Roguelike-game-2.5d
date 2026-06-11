@@ -165,8 +165,15 @@ class IsometricRenderer:
     def render(self, surface, px, py):
         self.update_camera(px, py)
         surface.fill(COLORS['black'])
+        margin = 50
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
+                sx, sy = self._w2s_raw(x, y)
+                screen_x = sx - self.cam_x
+                screen_y = sy - self.cam_y
+                if (screen_x < -margin or screen_x > SCREEN_WIDTH + margin or
+                    screen_y < -margin or screen_y > SCREEN_HEIGHT + margin):
+                    continue
                 if self.map_data[y][x] != TILE_WALL:
                     self._draw_floor(surface, x, y)
                 elif self._wall_adj(x, y):
@@ -203,10 +210,10 @@ class IsometricRenderer:
 
     def _draw_player(self, surface, x, y):
         sx, sy = int(self._w2s(x, y)[0]), int(self._w2s(x, y)[1])
-        pts = [(sx, sy - 3), (sx + 3, sy),
-               (sx, sy + 3), (sx - 3, sy)]
+        pts = [(sx, sy - 9), (sx + 9, sy),
+               (sx, sy + 9), (sx - 9, sy)]
         pygame.draw.polygon(surface, COLORS['player'], pts)
-        pygame.draw.polygon(surface, COLORS['white'], pts, 1)
+        pygame.draw.polygon(surface, COLORS['white'], pts, 2)
 
     def draw_ui(self, surface, px, py):
         ui = pygame.Surface((200, 150))
