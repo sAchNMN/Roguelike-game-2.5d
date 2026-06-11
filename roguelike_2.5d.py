@@ -119,6 +119,7 @@ class Renderer:
         self.rooms = rooms
         self.cam_x, self.cam_y = 0.0, 0.0
         self.target_cam_x, self.target_cam_y = 0.0, 0.0
+        self._camera_initialized = False
         self.map_offset_x = 0
         self.map_offset_y = 0
         self.map_surface = None
@@ -210,8 +211,13 @@ class Renderer:
             self.target_cam_y = (max_y - min_y - SCREEN_HEIGHT) // 2 + min_y
         else:
             self.target_cam_y = max(min_y - m, min(self.target_cam_y, max_y - SCREEN_HEIGHT + m))
-        self.cam_x += (self.target_cam_x - self.cam_x) * 0.15
-        self.cam_y += (self.target_cam_y - self.cam_y) * 0.15
+        if not self._camera_initialized:
+            self.cam_x = self.target_cam_x
+            self.cam_y = self.target_cam_y
+            self._camera_initialized = True
+        else:
+            self.cam_x += (self.target_cam_x - self.cam_x) * 0.15
+            self.cam_y += (self.target_cam_y - self.cam_y) * 0.15
 
     def render(self, px, py):
         self.update_camera(px, py)
