@@ -243,23 +243,23 @@ class OpenGLRenderer:
         glLoadIdentity()
 
         CHUNK = 32
-        # 只画可见chunk
-        tl = self._w2s(0, 0)
-        tr = self._w2s(MAP_WIDTH, 0)
-        bl = self._w2s(0, MAP_HEIGHT)
-        br = self._w2s(MAP_WIDTH, MAP_HEIGHT)
-        screen_min_x = min(tl[0], tr[0], bl[0], br[0]) - 100
-        screen_max_x = max(tl[0], tr[0], bl[0], br[0]) + 100
-        screen_min_y = min(tl[1], tr[1], bl[1], br[1]) - 100
-        screen_max_y = max(tl[1], tr[1], bl[1], br[1]) + 100
+        tw2 = TILE_WIDTH / 2
+        th2 = TILE_HEIGHT / 2
 
         for (cx, cy), (v, c) in self.chunks.items():
-            chunk_sx = (cx - cy) * (TILE_WIDTH / 2) - self.cam_x
-            chunk_sy = (cx + cy) * (TILE_HEIGHT / 2) - self.cam_y
-            chunk_ex = ((cx + CHUNK) - (cy + CHUNK)) * (TILE_WIDTH / 2) - self.cam_x
-            chunk_ey = ((cx + CHUNK) + (cy + CHUNK)) * (TILE_HEIGHT / 2) - self.cam_y
-            if (chunk_sx > SCREEN_WIDTH + 100 or chunk_ex < -100 or
-                chunk_sy > SCREEN_HEIGHT + 100 or chunk_ey < -100):
+            # chunk的4个角的世界坐标
+            corners = [
+                (cx, cy), (cx + CHUNK, cy),
+                (cx, cy + CHUNK), (cx + CHUNK, cy + CHUNK)
+            ]
+            # 转成屏幕坐标找边界
+            scorners = [((wx - wy) * tw2 - self.cam_x, (wx + wy) * th2 - self.cam_y) for wx, wy in corners]
+            min_sx = min(s[0] for s in scorners)
+            max_sx = max(s[0] for s in scorners)
+            min_sy = min(s[1] for s in scorners)
+            max_sy = max(s[1] for s in scorners)
+
+            if max_sx < -50 or min_sx > SCREEN_WIDTH + 50 or max_sy < -50 or min_sy > SCREEN_HEIGHT + 50:
                 continue
             self._draw_batch(v, c)
 
