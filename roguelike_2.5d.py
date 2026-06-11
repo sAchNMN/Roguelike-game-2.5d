@@ -27,10 +27,10 @@ COLORS = {
     'item': (255, 215, 0)
 }
 
-TILE_WIDTH = 16
-TILE_HEIGHT = 8
-MAP_WIDTH = 40
-MAP_HEIGHT = 40
+TILE_WIDTH = 48
+TILE_HEIGHT = 24
+MAP_WIDTH = 80
+MAP_HEIGHT = 80
 TILE_FLOOR = 0
 TILE_WALL = 1
 
@@ -53,26 +53,34 @@ class Room:
 
 
 class BSPMapGenerator:
-    def __init__(self, w, h, min_size=6):
+    def __init__(self, w, h, min_size=8):
         self.w, self.h, self.min_size = w, h, min_size
         self.rooms = []
         self.map = [[TILE_WALL] * w for _ in range(h)]
 
     def generate(self):
-        self._split(1, 1, self.w - 2, self.h - 2)
+        self._split(2, 2, self.w - 4, self.h - 4)
         self._connect()
         return self.map, self.rooms
 
     def _split(self, x, y, w, h):
         if w < self.min_size * 2 + 1 or h < self.min_size * 2 + 1:
-            rw = random.randint(self.min_size, min(w, 12))
-            rh = random.randint(self.min_size, min(h, 10))
-            r = Room(random.randint(x, x + w - rw), random.randint(y, y + h - rh), rw, rh)
-            self.rooms.append(r)
-            for ry in range(r.y, r.y + r.height):
-                for rx in range(r.x, r.x + r.width):
-                    if 0 <= rx < self.w and 0 <= ry < self.h:
-                        self.map[ry][rx] = TILE_FLOOR
+            rw = min(w, random.randint(self.min_size, min(w, 16)))
+            rh = min(h, random.randint(self.min_size, min(h, 14)))
+            if rw < self.min_size or rh < self.min_size:
+                return
+            pad = 1
+            if x + pad > x + w - rw - pad or y + pad > y + h - rh - pad:
+                return
+            rx = random.randint(x + pad, x + w - rw - pad)
+            ry = random.randint(y + pad, y + h - rh - pad)
+            r = Room(rx, ry, rw, rh)
+            if not self._overlaps(r):
+                self.rooms.append(r)
+                for ry2 in range(r.y, r.y + r.height):
+                    for rx2 in range(r.x, r.x + r.width):
+                        if 0 <= rx2 < self.w and 0 <= ry2 < self.h:
+                            self.map[ry2][rx2] = TILE_FLOOR
             return
         if random.random() < 0.5 and w >= self.min_size * 2 + 1:
             sx = random.randint(x + self.min_size, x + w - self.min_size)
@@ -83,14 +91,31 @@ class BSPMapGenerator:
             self._split(x, y, w, sy - y)
             self._split(x, sy, w, y + h - sy)
         else:
-            rw = random.randint(self.min_size, min(w, 12))
-            rh = random.randint(self.min_size, min(h, 10))
-            r = Room(random.randint(x, x + w - rw), random.randint(y, y + h - rh), rw, rh)
-            self.rooms.append(r)
-            for ry in range(r.y, r.y + r.height):
-                for rx in range(r.x, r.x + r.width):
-                    if 0 <= rx < self.w and 0 <= ry < self.h:
-                        self.map[ry][rx] = TILE_FLOOR
+            rw = min(w, random.randint(self.min_size, min(w, 16)))
+            rh = min(h, random.randint(self.min_size, min(h, 14)))
+            if rw < self.min_size or rh < self.min_size:
+                return
+            pad = 1
+            if x + pad > x + w - rw - pad or y + pad > y + h - rh - pad:
+                return
+            rx = random.randint(x + pad, x + w - rw - pad)
+            ry = random.randint(y + pad, y + h - rh - pad)
+            r = Room(rx, ry, rw, rh)
+            if not self._overlaps(r):
+                self.rooms.append(r)
+                for ry2 in range(r.y, r.y + r.height):
+                    for rx2 in range(r.x, r.x + r.width):
+                        if 0 <= rx2 < self.w and 0 <= ry2 < self.h:
+                            self.map[ry2][rx2] = TILE_FLOOR
+
+    def _overlaps(self, new_room):
+        for r in self.rooms:
+            if (new_room.x - 2 < r.x + r.width and
+                new_room.x + new_room.width + 2 > r.x and
+                new_room.y - 2 < r.y + r.height and
+                new_room.y + new_room.height + 2 > r.y):
+                return True
+        return False
 
     def _connect(self):
         for i in range(len(self.rooms) - 1):
@@ -98,18 +123,22 @@ class BSPMapGenerator:
             x1, y1, x2, y2 = r1.centerX, r1.centerY, r2.centerX, r2.centerY
             if random.random() < 0.5:
                 for x in range(min(x1, x2), max(x1, x2) + 1):
-                    if 0 <= x < self.w and 0 <= y1 < self.h:
-                        self.map[y1][x] = TILE_FLOOR
+                    for dy in (0, 1):
+                        if 0 <= x < self.w and 0 <= y1 + dy < self.h:
+                            self.map[y1 + dy][x] = TILE_FLOOR
                 for y in range(min(y1, y2), max(y1, y2) + 1):
-                    if 0 <= x2 < self.w and 0 <= y < self.h:
-                        self.map[y][x2] = TILE_FLOOR
+                    for dx in (0, 1):
+                        if 0 <= x2 + dx < self.w and 0 <= y < self.h:
+                            self.map[y][x2 + dx] = TILE_FLOOR
             else:
                 for y in range(min(y1, y2), max(y1, y2) + 1):
-                    if 0 <= x1 < self.w and 0 <= y < self.h:
-                        self.map[y][x1] = TILE_FLOOR
+                    for dx in (0, 1):
+                        if 0 <= x1 + dx < self.w and 0 <= y < self.h:
+                            self.map[y][x1 + dx] = TILE_FLOOR
                 for x in range(min(x1, x2), max(x1, x2) + 1):
-                    if 0 <= x < self.w and 0 <= y2 < self.h:
-                        self.map[y2][x] = TILE_FLOOR
+                    for dy in (0, 1):
+                        if 0 <= x < self.w and 0 <= y2 + dy < self.h:
+                            self.map[y2 + dy][x] = TILE_FLOOR
 
 
 class Renderer:
@@ -184,7 +213,7 @@ class Renderer:
                     pygame.draw.polygon(self.map_surface, color, pts)
                     pygame.draw.polygon(self.map_surface, COLORS['dark_gray'], pts, 1)
                 elif adj_wall(x, y):
-                    h = 4
+                    h = 12
                     pygame.draw.polygon(self.map_surface, COLORS['wall_top'],
                         [(sx, sy - TILE_HEIGHT // 2 - h), (sx + TILE_WIDTH // 2, sy - h),
                          (sx, sy + TILE_HEIGHT // 2 - h), (sx - TILE_WIDTH // 2, sy - h)])
