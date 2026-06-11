@@ -6,7 +6,6 @@ import ctypes
 
 pygame.init()
 
-# 禁用IME输入法，防止切屏后IME拦截键盘事件
 try:
     pygame.key.stop_text_input()
 except Exception:
@@ -39,8 +38,11 @@ user32 = ctypes.windll.user32
 
 
 def is_window_foreground():
-    hwnd = pygame.display.get_wm_info()['window']
-    return user32.GetForegroundWindow() == hwnd
+    try:
+        hwnd = pygame.display.get_wm_info()['window']
+        return user32.GetForegroundWindow() == hwnd
+    except Exception:
+        return True
 
 
 class Room:
@@ -116,11 +118,32 @@ class IsometricRenderer:
         self.rooms = rooms
         self.cam_x, self.cam_y = 0, 0
         self.tho = 4
-        self.floor_colors = {}
-        self.visible_walls = set()
-        self._precompute()
+        self._build_map_surface()
 
-    def _precompute(self):
+    def _w2s_raw(self, wx, wy):
+        return (wx - wy) * (TILE_WIDTH // 2), (wx + wy) * (TILE_HEIGHT // 2)
+
+    def _w2s(self, wx, wy):
+        sx, sy = self._w2s_raw(wx, wy)
+        return sx - self.cam_x, sy - self.cam_y
+
+    def _build_map_surface(self):
+        """一次性把整个地图画到一张大Surface上"""
+        corners = [self._w2s_raw(0, 0), self._w2s_raw(MAP_WIDTH, 0),
+                    self._w2s_raw(0, MAP_HEIGHT), self._w2s_raw(MAP_WIDTH, MAP_HEIGHT)]
+        min_x = min(c[0] for c in corners)
+        min_y = min(c[1] for c in corners)
+        max_x = max(c[0] for c in corners)
+        max_y = max(c[1] for c in corners)
+        self.map_offset_x = -min_x + TILE_WIDTH
+        self.map_offset_y = -min_y + self.tho + TILE_HEIGHT
+        self.map_surf_w = max_x - min_x + TILE_WIDTH * 2
+        self.map_surf_h = max_y - min_y + self.tho + TILE_HEIGHT * 2
+        self.map_surface = pygame.Surface((self.map_surf_w, self.map_surf_h))
+        self.map_surface.fill(COLORS['black'])
+
+        # 预计算房间地板颜色
+        floor_colors = {}
         for y in range(MAP_HEIGHT):
             for x in range(MAP_WIDTH):
                 if self.map_data[y][x] != TILE_WALL:
@@ -129,23 +152,44 @@ class IsometricRenderer:
                         if r.x <= x < r.x + r.width and r.y <= y < r.y + r.height:
                             random.seed(x * 1000 + y)
                             v = random.randint(-10, 10)
-                            self.floor_colors[(x, y)] = (
+                            floor_colors[(x, y)] = (
                                 max(0, min(255, base[0] + v)),
                                 max(0, min(255, base[1] + v)),
                                 max(0, min(255, base[2] + v)))
                             random.seed()
                             break
                     else:
-                        self.floor_colors[(x, y)] = base
-                elif self._wall_adj(x, y):
-                    self.visible_walls.add((x, y))
+                        floor_colors[(x, y)] = base
 
-    def _w2s_raw(self, wx, wy):
-        return (wx - wy) * (TILE_WIDTH // 2), (wx + wy) * (TILE_HEIGHT // 2)
+        def adj_wall(x, y):
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < MAP_WIDTH and 0 <= ny < MAP_HEIGHT:
+                    if self.map_data[ny][nx] != TILE_WALL:
+                        return True
+            return False
 
-    def _w2s(self, wx, wy):
-        sx, sy = self._w2s_raw(wx, wy)
-        return sx - self.cam_x, sy - self.cam_y
+        for y in range(MAP_HEIGHT):
+            for x in range(MAP_WIDTH):
+                sx = (x - y) * (TILE_WIDTH // 2) + self.map_offset_x
+                sy = (x + y) * (TILE_HEIGHT // 2) + self.map_offset_y
+                if self.map_data[y][x] != TILE_WALL:
+                    color = floor_colors.get((x, y), COLORS['floor'])
+                    pts = [(sx, sy - TILE_HEIGHT // 2), (sx + TILE_WIDTH // 2, sy),
+                           (sx, sy + TILE_HEIGHT // 2), (sx - TILE_WIDTH // 2, sy)]
+                    pygame.draw.polygon(self.map_surface, color, pts)
+                    pygame.draw.polygon(self.map_surface, COLORS['dark_gray'], pts, 1)
+                elif adj_wall(x, y):
+                    h = self.tho
+                    pygame.draw.polygon(self.map_surface, COLORS['wall_top'],
+                        [(sx, sy - TILE_HEIGHT // 2 - h), (sx + TILE_WIDTH // 2, sy - h),
+                         (sx, sy + TILE_HEIGHT // 2 - h), (sx - TILE_WIDTH // 2, sy - h)])
+                    pygame.draw.polygon(self.map_surface, COLORS['wall'],
+                        [(sx - TILE_WIDTH // 2, sy - h), (sx, sy + TILE_HEIGHT // 2 - h),
+                         (sx, sy + TILE_HEIGHT // 2), (sx - TILE_WIDTH // 2, sy)])
+                    pygame.draw.polygon(self.map_surface, COLORS['dark_brown'],
+                        [(sx + TILE_WIDTH // 2, sy - h), (sx, sy + TILE_HEIGHT // 2 - h),
+                         (sx, sy + TILE_HEIGHT // 2), (sx + TILE_WIDTH // 2, sy)])
 
     def update_camera(self, px, py):
         psx, psy = self._w2s_raw(px, py)
@@ -168,65 +212,19 @@ class IsometricRenderer:
         self.cam_x += (tcx - self.cam_x) * 0.15
         self.cam_y += (tcy - self.cam_y) * 0.15
 
-    def _screen_to_tile(self, screen_x, screen_y):
-        wx = (screen_x + self.cam_x) / (TILE_WIDTH // 2)
-        wy = (screen_y + self.cam_y) / (TILE_HEIGHT // 2)
-        return (wx + wy) / 2, (wy - wx) / 2
-
     def render(self, surface, px, py):
         self.update_camera(px, py)
         surface.fill(COLORS['black'])
-        margin = 50
-        # 计算屏幕四角对应的世界坐标，只遍历可见区域
-        tl_x, tl_y = self._screen_to_tile(-margin, -margin)
-        tr_x, tr_y = self._screen_to_tile(SCREEN_WIDTH + margin, -margin)
-        bl_x, bl_y = self._screen_to_tile(-margin, SCREEN_HEIGHT + margin)
-        br_x, br_y = self._screen_to_tile(SCREEN_WIDTH + margin, SCREEN_HEIGHT + margin)
-        min_tile_x = max(0, int(min(tl_x, tr_x, bl_x, br_x)) - 1)
-        max_tile_x = min(MAP_WIDTH, int(max(tl_x, tr_x, bl_x, br_x)) + 2)
-        min_tile_y = max(0, int(min(tl_y, tr_y, bl_y, br_y)) - 1)
-        max_tile_y = min(MAP_HEIGHT, int(max(tl_y, tr_y, bl_y, br_y)) + 2)
-
-        for y in range(min_tile_y, max_tile_y):
-            for x in range(min_tile_x, max_tile_x):
-                if self.map_data[y][x] != TILE_WALL:
-                    self._draw_floor(surface, x, y)
-                elif (x, y) in self.visible_walls:
-                    self._draw_wall(surface, x, y)
-        self._draw_player(surface, px, py)
-
-    def _wall_adj(self, x, y):
-        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < MAP_WIDTH and 0 <= ny < MAP_HEIGHT:
-                if self.map_data[ny][nx] != TILE_WALL:
-                    return True
-        return False
-
-    def _draw_floor(self, surface, x, y):
-        sx, sy = self._w2s(x, y)
-        pts = [(sx, sy - TILE_HEIGHT // 2), (sx + TILE_WIDTH // 2, sy),
-               (sx, sy + TILE_HEIGHT // 2), (sx - TILE_WIDTH // 2, sy)]
-        pygame.draw.polygon(surface, self.floor_colors.get((x, y), COLORS['floor']), pts)
-        pygame.draw.polygon(surface, COLORS['dark_gray'], pts, 1)
-
-    def _draw_wall(self, surface, x, y):
-        sx, sy = self._w2s(x, y)
-        h = self.tho
-        pygame.draw.polygon(surface, COLORS['wall_top'],
-                            [(sx, sy - TILE_HEIGHT // 2 - h), (sx + TILE_WIDTH // 2, sy - h),
-                             (sx, sy + TILE_HEIGHT // 2 - h), (sx - TILE_WIDTH // 2, sy - h)])
-        pygame.draw.polygon(surface, COLORS['wall'],
-                            [(sx - TILE_WIDTH // 2, sy - h), (sx, sy + TILE_HEIGHT // 2 - h),
-                             (sx, sy + TILE_HEIGHT // 2), (sx - TILE_WIDTH // 2, sy)])
-        pygame.draw.polygon(surface, COLORS['dark_brown'],
-                            [(sx + TILE_WIDTH // 2, sy - h), (sx, sy + TILE_HEIGHT // 2 - h),
-                             (sx, sy + TILE_HEIGHT // 2), (sx + TILE_WIDTH // 2, sy)])
-
-    def _draw_player(self, surface, x, y):
-        sx, sy = int(self._w2s(x, y)[0]), int(self._w2s(x, y)[1])
-        pts = [(sx, sy - 9), (sx + 9, sy),
-               (sx, sy + 9), (sx - 9, sy)]
+        # 从预渲染的地图Surface上裁剪blit
+        src_x = int(self.cam_x + self.map_offset_x - TILE_WIDTH) - 10
+        src_y = int(self.cam_y + self.map_offset_y - self.tho - TILE_HEIGHT) - 10
+        src_x = max(0, min(src_x, self.map_surf_w - SCREEN_WIDTH))
+        src_y = max(0, min(src_y, self.map_surf_h - SCREEN_HEIGHT))
+        surface.blit(self.map_surface, (0, 0), (src_x, src_y, SCREEN_WIDTH, SCREEN_HEIGHT))
+        # 玩家
+        sx = int((px - py) * (TILE_WIDTH // 2) - self.cam_x)
+        sy = int((px + py) * (TILE_HEIGHT // 2) - self.cam_y)
+        pts = [(sx, sy - 9), (sx + 9, sy), (sx, sy + 9), (sx - 9, sy)]
         pygame.draw.polygon(surface, COLORS['player'], pts)
         pygame.draw.polygon(surface, COLORS['white'], pts, 2)
 
@@ -302,11 +300,9 @@ class Game:
         return dx, dy
 
     def start_move(self, dx, dy):
-        # 归一化方向到整数步长（对角线走一步）
         if abs(dx) > 0.1 and abs(dy) > 0.1:
             step_x = 1.0 if dx > 0 else -1.0
             step_y = 1.0 if dy > 0 else -1.0
-            # 对角线：尝试斜走，不行则尝试单轴
             if self.is_valid_cell(self.target_x + step_x, self.target_y + step_y):
                 self.target_x += step_x
                 self.target_y += step_y
@@ -337,10 +333,8 @@ class Game:
                 mv = min(self.move_speed * dt, dist)
                 self.player_x += (dx / dist) * mv
                 self.player_y += (dy / dist) * mv
-            # 移动中可以改变方向
             kdx, kdy = self._read_keys()
             if (kdx != 0 or kdy != 0) and dist > 0.3:
-                # 检查新方向是否与当前方向相反
                 dot = dx * kdx + dy * kdy
                 if dot < 0:
                     self.start_move(kdx, kdy)
