@@ -6,6 +6,12 @@ import ctypes
 
 pygame.init()
 
+# 禁用IME输入法，防止切屏后IME拦截键盘事件
+try:
+    pygame.key.stop_text_input()
+except Exception:
+    pass
+
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 768
 
@@ -304,12 +310,10 @@ class Game:
                 self.start_move(dx, dy)
 
     def _reset_keyboard(self):
-        for _ in range(3):
-            pygame.event.pump()
-            pygame.event.clear()
-        pygame.key.stop_text_input()
-        pygame.key.start_text_input()
         pygame.event.clear()
+        pygame.event.pump()
+        pygame.event.clear()
+        pygame.key.stop_text_input()
 
     def handle_events(self):
         for event in pygame.event.get():
