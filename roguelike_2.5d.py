@@ -415,13 +415,11 @@ class Game:
     def __init__(self):
         self.map_data = None
         self.rooms = None
-        self.player_x = 0
-        self.player_y = 0
-        self.player_render_x = 0.0  # 渲染用的浮点位置
-        self.player_render_y = 0.0
-        self.move_speed = 0.12  # 移动插值速度
-        self.is_moving = False
+        self.player_x = 0.0
+        self.player_y = 0.0
+        self.move_speed = 3.0  # 移动速度（每秒格数）
         self.renderer = None
+        self.keys_pressed = set()
         self.generate_new_map()
     
     def generate_new_map(self):
@@ -431,42 +429,47 @@ class Game:
         
         # 将玩家放在第一个房间
         if self.rooms:
-            self.player_x = self.rooms[0].centerX
-            self.player_y = self.rooms[0].centerY
-            self.player_render_x = float(self.player_x)
-            self.player_render_y = float(self.player_y)
+            self.player_x = float(self.rooms[0].centerX)
+            self.player_y = float(self.rooms[0].centerY)
         
         self.renderer = IsometricRenderer(self.map_data, self.rooms)
     
-    def is_valid_move(self, x, y):
-        # 检查移动是否有效
-        if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
-            return self.map_data[y][x] != TILE_WALL
+    def is_valid_position(self, x, y):
+        # 检查位置是否有效（基于浮点坐标）
+        map_x = int(x)
+        map_y = int(y)
+        if 0 <= map_x < MAP_WIDTH and 0 <= map_y < MAP_HEIGHT:
+            return self.map_data[map_y][map_x] != TILE_WALL
         return False
     
-    def move_player(self, dx, dy):
-        new_x = self.player_x + dx
-        new_y = self.player_y + dy
+    def update(self, dt):
+        # 根据按键状态移动
+        dx = 0.0
+        dy = 0.0
         
-        if self.is_valid_move(new_x, new_y):
+        if pygame.K_w in self.keys_pressed or pygame.K_UP in self.keys_pressed:
+            dy -= 1.0
+        if pygame.K_s in self.keys_pressed or pygame.K_DOWN in self.keys_pressed:
+            dy += 1.0
+        if pygame.K_a in self.keys_pressed or pygame.K_LEFT in self.keys_pressed:
+            dx -= 1.0
+        if pygame.K_d in self.keys_pressed or pygame.K_RIGHT in self.keys_pressed:
+            dx += 1.0
+        
+        # 归一化对角线移动
+        if dx != 0 and dy != 0:
+            dx *= 0.707
+            dy *= 0.707
+        
+        # 计算新位置
+        new_x = self.player_x + dx * self.move_speed * dt
+        new_y = self.player_y + dy * self.move_speed * dt
+        
+        # 分轴碰撞检测，允许滑动
+        if self.is_valid_position(new_x, self.player_y):
             self.player_x = new_x
+        if self.is_valid_position(self.player_x, new_y):
             self.player_y = new_y
-    
-    def update(self):
-        # 平滑插值到目标位置
-        dx = self.player_x - self.player_render_x
-        dy = self.player_y - self.player_render_y
-        
-        dist = (dx * dx + dy * dy) ** 0.5
-        
-        if dist > 0.01:
-            self.player_render_x += dx * self.move_speed
-            self.player_render_y += dy * self.move_speed
-            self.is_moving = True
-        else:
-            self.player_render_x = float(self.player_x)
-            self.player_render_y = float(self.player_y)
-            self.is_moving = False
     
     def handle_input(self):
         for event in pygame.event.get():
@@ -477,14 +480,10 @@ class Game:
                     return False
                 elif event.key == pygame.K_r:
                     self.generate_new_map()
-                elif event.key in (pygame.K_w, pygame.K_UP):
-                    self.move_player(0, -1)
-                elif event.key in (pygame.K_s, pygame.K_DOWN):
-                    self.move_player(0, 1)
-                elif event.key in (pygame.K_a, pygame.K_LEFT):
-                    self.move_player(-1, 0)
-                elif event.key in (pygame.K_d, pygame.K_RIGHT):
-                    self.move_player(1, 0)
+                else:
+                    self.keys_pressed.add(event.key)
+            elif event.type == pygame.KEYUP:
+                self.keys_pressed.discard(event.key)
         
         return True
     
@@ -493,11 +492,11 @@ class Game:
         running = True
         
         while running:
+            dt = clock.tick(60) / 1000.0  # 秒为单位的时间差
             running = self.handle_input()
-            self.update()
-            self.renderer.render(screen, self.player_render_x, self.player_render_y)
+            self.update(dt)
+            self.renderer.render(screen, self.player_x, self.player_y)
             pygame.display.flip()
-            clock.tick(60)
         
         pygame.quit()
         sys.exit()
