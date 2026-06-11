@@ -366,9 +366,12 @@ class Game:
                 self.running = False
                 return
             if event.type == pygame.ACTIVEEVENT:
-                if hasattr(event, 'gain') and event.gain == 1:
-                    self._reset_keyboard()
-                    if self.paused:
+                if hasattr(event, 'gain'):
+                    if event.gain == 0:
+                        self.paused = True
+                        self._render_pause()
+                    elif event.gain == 1:
+                        self._reset_keyboard()
                         self._render_pause()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
