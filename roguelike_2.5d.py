@@ -29,8 +29,8 @@ COLORS = {
 
 TILE_WIDTH = 16
 TILE_HEIGHT = 8
-MAP_WIDTH = 400
-MAP_HEIGHT = 400
+MAP_WIDTH = 40
+MAP_HEIGHT = 40
 TILE_FLOOR = 0
 TILE_WALL = 1
 
@@ -53,7 +53,7 @@ class Room:
 
 
 class BSPMapGenerator:
-    def __init__(self, w, h, min_size=60):
+    def __init__(self, w, h, min_size=6):
         self.w, self.h, self.min_size = w, h, min_size
         self.rooms = []
         self.map = [[TILE_WALL] * w for _ in range(h)]
@@ -65,8 +65,8 @@ class BSPMapGenerator:
 
     def _split(self, x, y, w, h):
         if w < self.min_size * 2 + 1 or h < self.min_size * 2 + 1:
-            rw = random.randint(self.min_size, min(w, 120))
-            rh = random.randint(self.min_size, min(h, 100))
+            rw = random.randint(self.min_size, min(w, 12))
+            rh = random.randint(self.min_size, min(h, 10))
             r = Room(random.randint(x, x + w - rw), random.randint(y, y + h - rh), rw, rh)
             self.rooms.append(r)
             for ry in range(r.y, r.y + r.height):
@@ -83,8 +83,8 @@ class BSPMapGenerator:
             self._split(x, y, w, sy - y)
             self._split(x, sy, w, y + h - sy)
         else:
-            rw = random.randint(self.min_size, min(w, 120))
-            rh = random.randint(self.min_size, min(h, 100))
+            rw = random.randint(self.min_size, min(w, 12))
+            rh = random.randint(self.min_size, min(h, 10))
             r = Room(random.randint(x, x + w - rw), random.randint(y, y + h - rh), rw, rh)
             self.rooms.append(r)
             for ry in range(r.y, r.y + r.height):
