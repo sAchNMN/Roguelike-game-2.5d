@@ -7,9 +7,6 @@ from collections import deque
 # 初始化Pygame
 pygame.init()
 
-# 启用键盘文本输入模式（解决Windows下窗口切换后键盘无响应问题）
-pygame.key.start_text_input()
-
 # 屏幕设置
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 768
@@ -524,10 +521,12 @@ class Game:
             elif event.type == pygame.KEYUP:
                 self.keys_pressed.discard(event.key)
             elif event.type == pygame.ACTIVEEVENT:
-                # 窗口获得/失去焦点时清空按键状态
                 if hasattr(event, 'gain') and event.gain == 1:
                     self.keys_pressed.clear()
                     self.is_moving = False
+                    # 重新创建显示表面以恢复键盘输入
+                    global screen
+                    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         
         return True
     
