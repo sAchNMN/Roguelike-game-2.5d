@@ -241,31 +241,33 @@ class OpenGLRenderer:
         self.update_camera(px, py)
         glClear(GL_COLOR_BUFFER_BIT)
         glLoadIdentity()
+        # 通过模型矩阵应用摄像机偏移
+        glTranslatef(-self.cam_x, -self.cam_y, 0)
 
         CHUNK = 32
         tw2 = TILE_WIDTH / 2
         th2 = TILE_HEIGHT / 2
 
         for (cx, cy), (v, c) in self.chunks.items():
-            # chunk的4个角的世界坐标
+            # chunk的4个角的世界坐标转屏幕坐标
             corners = [
-                (cx, cy), (cx + CHUNK, cy),
-                (cx, cy + CHUNK), (cx + CHUNK, cy + CHUNK)
+                ((cx - cy) * tw2 - self.cam_x, (cx + cy) * th2 - self.cam_y),
+                ((cx + CHUNK - cy) * tw2 - self.cam_x, (cx + CHUNK + cy) * th2 - self.cam_y),
+                ((cx - cy - CHUNK) * tw2 - self.cam_x, (cx + cy + CHUNK) * th2 - self.cam_y),
+                ((cx + CHUNK - cy - CHUNK) * tw2 - self.cam_x, (cx + CHUNK + cy + CHUNK) * th2 - self.cam_y)
             ]
-            # 转成屏幕坐标找边界
-            scorners = [((wx - wy) * tw2 - self.cam_x, (wx + wy) * th2 - self.cam_y) for wx, wy in corners]
-            min_sx = min(s[0] for s in scorners)
-            max_sx = max(s[0] for s in scorners)
-            min_sy = min(s[1] for s in scorners)
-            max_sy = max(s[1] for s in scorners)
+            min_sx = min(s[0] for s in corners)
+            max_sx = max(s[0] for s in corners)
+            min_sy = min(s[1] for s in corners)
+            max_sy = max(s[1] for s in corners)
 
             if max_sx < -50 or min_sx > SCREEN_WIDTH + 50 or max_sy < -50 or min_sy > SCREEN_HEIGHT + 50:
                 continue
             self._draw_batch(v, c)
 
         # 玩家
-        sx = (px - py) * (TILE_WIDTH / 2) - self.cam_x
-        sy = (px + py) * (TILE_HEIGHT / 2) - self.cam_y
+        sx = (px - py) * tw2
+        sy = (px + py) * th2
         s = 9
         glBegin(GL_TRIANGLES)
         glColor3f(0, 1, 0.392)
@@ -420,7 +422,6 @@ class Game:
 
     def _draw_pause(self):
         self.renderer.render(self.player_x, self.player_y)
-        # 用pygame表面叠加UI
         ui = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
@@ -431,9 +432,8 @@ class Game:
         t2 = f2.render("Press ESC to resume", True, COLORS['light_gray'])
         ui.blit(t1, (SCREEN_WIDTH // 2 - t1.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
         ui.blit(t2, (SCREEN_WIDTH // 2 - t2.get_width() // 2, SCREEN_HEIGHT // 2 + 30))
-        # 转成OpenGL纹理叠加
-        ui_str = pygame.image.tostring(ui, "RGBA", True)  # noqa: deprecated but still needed
-        gl_window_pos = glGetIntegerv(GL_VIEWPORT)
+        # 不翻转，因为gluOrtho2D已经处理了Y轴
+        ui_str = pygame.image.tostring(ui, "RGBA", False)
         glEnable(GL_TEXTURE_2D)
         tex = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, tex)
@@ -442,10 +442,10 @@ class Game:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
         glDisable(GL_DEPTH_TEST)
         glBegin(GL_QUADS)
-        glTexCoord2f(0, 0); glVertex2f(0, 0)
-        glTexCoord2f(1, 0); glVertex2f(SCREEN_WIDTH, 0)
-        glTexCoord2f(1, 1); glVertex2f(SCREEN_WIDTH, SCREEN_HEIGHT)
-        glTexCoord2f(0, 1); glVertex2f(0, SCREEN_HEIGHT)
+        glTexCoord2f(0, 1); glVertex2f(0, 0)
+        glTexCoord2f(1, 1); glVertex2f(SCREEN_WIDTH, 0)
+        glTexCoord2f(1, 0); glVertex2f(SCREEN_WIDTH, SCREEN_HEIGHT)
+        glTexCoord2f(0, 0); glVertex2f(0, SCREEN_HEIGHT)
         glEnd()
         glDeleteTextures([tex])
         glDisable(GL_TEXTURE_2D)
